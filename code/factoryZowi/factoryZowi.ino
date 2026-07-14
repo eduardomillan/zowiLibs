@@ -88,7 +88,7 @@ void setup() {
       delay(100);
     }
 
-    zowi.moveServos(500, checkPosition);
+    zowi._moveServos(500, checkPosition);
 
     while((digitalRead(PIN_ThirdButton)==0))
     {
@@ -96,7 +96,7 @@ void setup() {
     }
 
     ledmatrix.writeFull(okMouth_code);
-    zowi.moveServos(500, homePosition);
+    zowi._moveServos(500, homePosition);
 
 }
 

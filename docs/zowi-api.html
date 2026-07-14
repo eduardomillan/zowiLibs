@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zowi API Reference — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-api.html" class="active">Zowi API Reference</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>Zowi Library — Complete API Reference</h1>
+    <p>Full reference for the <code>Zowi</code> class, including every public method, its parameters, default values, return types, and behavior.</p>
+
+    <h2>Contents</h2>
+    <ul>
+      <li><a href="#initialization">Initialization</a></li>
+      <li><a href="#attach-detach">Attach &amp; Detach</a></li>
+      <li><a href="#calibration-trims">Calibration Trims</a></li>
+      <li><a href="#low-level-motion">Low-Level Motion</a></li>
+      <li><a href="#home-rest-state">Home &amp; Rest State</a></li>
+      <li><a href="#high-level-movements">High-Level Movements</a></li>
+      <li><a href="#sensors">Sensors</a></li>
+      <li><a href="#battery">Battery</a></li>
+      <li><a href="#led-mouth">LED Mouth</a></li>
+      <li><a href="#sounds">Sounds</a></li>
+      <li><a href="#gestures">Gestures</a></li>
+      <li><a href="#constants">Constants</a></li>
+      <li><a href="#mouth-indices">Mouth Indices</a></li>
+      <li><a href="#song-ids">Song IDs</a></li>
+      <li><a href="#gesture-ids">Gesture IDs</a></li>
+      <li><a href="#animation-ids">Animation IDs</a></li>
+    </ul>
+
+    <!-- INITIALIZATION -->
+    <h2 id="initialization">Initialization</h2>
+    <h3><code>init()</code></h3>
+    <pre><code>void init(
+    int YL,
+    int YR,
+    int RL,
+    int RR,
+    bool load_calibration = true,
+    int NoiseSensor      = PIN_NoiseSensor,
+    int Buzzer           = PIN_Buzzer,
+    int USTrigger        = PIN_Trigger,
+    int USEcho           = PIN_Echo
+);</code></pre>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>YL</code></td><td><code>int</code></td><td>—</td><td>Servo pin: left hip</td></tr>
+      <tr><td><code>YR</code></td><td><code>int</code></td><td>—</td><td>Servo pin: right hip</td></tr>
+      <tr><td><code>RL</code></td><td><code>int</code></td><td>—</td><td>Servo pin: left foot</td></tr>
+      <tr><td><code>RR</code></td><td><code>int</code></td><td>—</td><td>Servo pin: right foot</td></tr>
+      <tr><td><code>load_calibration</code></td><td><code>bool</code></td><td><code>true</code></td><td>Load trim values from EEPROM[0..3]</td></tr>
+      <tr><td><code>NoiseSensor</code></td><td><code>int</code></td><td><code>A6</code></td><td>Analog pin for noise sensor</td></tr>
+      <tr><td><code>Buzzer</code></td><td><code>int</code></td><td><code>10</code></td><td>Digital pin for buzzer</td></tr>
+      <tr><td><code>USTrigger</code></td><td><code>int</code></td><td><code>8</code></td><td>Ultrasonic sensor trigger pin</td></tr>
+      <tr><td><code>USEcho</code></td><td><code>int</code></td><td><code>9</code></td><td>Ultrasonic sensor echo pin</td></tr>
+    </table>
+
+    <!-- ATTACH / DETACH -->
+    <h2 id="attach-detach">Attach &amp; Detach</h2>
+    <h3><code>attachServos()</code></h3>
+    <p>Attaches all four servos. Called automatically by <code>init()</code> and <code>_moveServos()</code>.</p>
+
+    <h3><code>detachServos()</code></h3>
+    <p>Detaches all four servos, freeing them. Called automatically by <code>home()</code>.</p>
+
+    <!-- CALIBRATION TRIMS -->
+    <h2 id="calibration-trims">Calibration Trims</h2>
+    <h3><code>setTrims(YL, YR, RL, RR)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>YL</code></td><td><code>int</code></td><td>Trim offset for left hip</td></tr>
+      <tr><td><code>YR</code></td><td><code>int</code></td><td>Trim offset for right hip</td></tr>
+      <tr><td><code>RL</code></td><td><code>int</code></td><td>Trim offset for left foot</td></tr>
+      <tr><td><code>RR</code></td><td><code>int</code></td><td>Trim offset for right foot</td></tr>
+    </table>
+
+    <h3><code>saveTrimsOnEEPROM()</code></h3>
+    <p>Saves current trims to EEPROM[0..3]. Loaded automatically on boot if <code>load_calibration=true</code>.</p>
+
+    <!-- LOW-LEVEL MOTION -->
+    <h2 id="low-level-motion">Low-Level Motion</h2>
+    <h3><code>_moveServos(time, servo_target)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>time</code></td><td><code>int</code></td><td>Duration in ms. If ≤10, instant jump.</td></tr>
+      <tr><td><code>servo_target</code></td><td><code>int[4]</code></td><td>Target positions: <code>{YL, YR, RL, RR}</code></td></tr>
+    </table>
+
+    <h3><code>oscillateServos(A, O, T, phase_diff, cycle)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>A</code></td><td><code>int[4]</code></td><td>Amplitude per servo (degrees)</td></tr>
+      <tr><td><code>O</code></td><td><code>int[4]</code></td><td>Offset (center) per servo</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td>Period in ms</td></tr>
+      <tr><td><code>phase_diff</code></td><td><code>double[4]</code></td><td>Initial phase per servo (radians)</td></tr>
+      <tr><td><code>cycle</code></td><td><code>float</code></td><td>Number of periods (default: <code>1</code>)</td></tr>
+    </table>
+
+    <!-- HOME & REST STATE -->
+    <h2 id="home-rest-state">Home &amp; Rest State</h2>
+    <h3><code>home()</code></h3>
+    <p>Moves all servos to 90° over 500 ms, then detaches them. Sets rest state to <code>true</code>. No-op if already resting.</p>
+
+    <h3><code>getRestState()</code></h3>
+    <p>Returns <code>true</code> if Zowi is in rest position.</p>
+
+    <h3><code>setRestState(state)</code></h3>
+    <p>Manually overrides the rest state flag.</p>
+
+    <!-- HIGH-LEVEL MOVEMENTS -->
+    <h2 id="high-level-movements">High-Level Movements</h2>
+
+    <h3><code>jump(steps, T)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of jumps</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>2000</code></td><td>Period in ms</td></tr>
+    </table>
+
+    <h3><code>walk(steps, T, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>4</code></td><td>Number of steps</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>1000</code></td><td>Period in ms</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>FORWARD</code></td><td><code>FORWARD</code> (1) or <code>BACKWARD</code> (-1)</td></tr>
+    </table>
+
+    <h3><code>turn(steps, T, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>4</code></td><td>Number of steps</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>2000</code></td><td>Period in ms</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>LEFT</code></td><td><code>LEFT</code> (1) or <code>RIGHT</code> (-1)</td></tr>
+    </table>
+
+    <h3><code>bend(steps, T, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>int</code></td><td><code>1</code></td><td>Number of bends</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>1400</code></td><td>Period in ms (internal T2 fixed at 800 ms)</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>LEFT</code></td><td><code>LEFT</code> (1) or <code>RIGHT</code> (-1)</td></tr>
+    </table>
+
+    <h3><code>shakeLeg(steps, T, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>int</code></td><td><code>1</code></td><td>Number of shake cycles</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>2000</code></td><td>Period in ms (internal T2 fixed at 1000 ms)</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>RIGHT</code></td><td><code>RIGHT</code> (-1) or <code>LEFT</code> (1)</td></tr>
+    </table>
+
+    <h3><code>updown(steps, T, h)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of bounces</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>1000</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Height. Use <code>SMALL</code> (5), <code>MEDIUM</code> (15), <code>BIG</code> (30), or any int 0–90</td></tr>
+    </table>
+
+    <h3><code>swing(steps, T, h)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of swings</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>1000</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Amplitude (0–50 approx)</td></tr>
+    </table>
+
+    <h3><code>tiptoeSwing(steps, T, h)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of swings</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>900</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Amplitude (0–50 approx)</td></tr>
+    </table>
+
+    <h3><code>jitter(steps, T, h)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of jitters</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>500</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Height (clamped to max 25)</td></tr>
+    </table>
+
+    <h3><code>ascendingTurn(steps, T, h)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of turns</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>900</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Height (clamped to max 13)</td></tr>
+    </table>
+
+    <h3><code>moonwalker(steps, T, h, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of steps</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>900</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Height (15–40 typical)</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>LEFT</code></td><td><code>LEFT</code> (1) or <code>RIGHT</code> (-1)</td></tr>
+    </table>
+
+    <h3><code>crusaito(steps, T, h, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of steps</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>900</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Height (20–50)</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>FORWARD</code></td><td><code>FORWARD</code> (1) or <code>BACKWARD</code> (-1)</td></tr>
+    </table>
+
+    <h3><code>flapping(steps, T, h, dir)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>steps</code></td><td><code>float</code></td><td><code>1</code></td><td>Number of flaps</td></tr>
+      <tr><td><code>T</code></td><td><code>int</code></td><td><code>1000</code></td><td>Period in ms</td></tr>
+      <tr><td><code>h</code></td><td><code>int</code></td><td><code>20</code></td><td>Height (10–30)</td></tr>
+      <tr><td><code>dir</code></td><td><code>int</code></td><td><code>FORWARD</code></td><td><code>FORWARD</code> (1) or <code>BACKWARD</code> (-1)</td></tr>
+    </table>
+
+    <!-- SENSORS -->
+    <h2 id="sensors">Sensors</h2>
+    <h3><code>getDistance()</code></h3>
+    <p>Returns distance in cm from the ultrasonic sensor. Returns <code>999</code> if no echo.</p>
+
+    <h3><code>getNoise()</code></h3>
+    <p>Returns averaged noise level from the analog noise sensor (pin A6). Averages 2 readings with 4 ms delay.</p>
+
+    <!-- BATTERY -->
+    <h2 id="battery">Battery</h2>
+    <h3><code>getBatteryLevel()</code></h3>
+    <p>Returns battery percentage (0–100%). Averages 10 readings. First read discarded.</p>
+
+    <h3><code>getBatteryVoltage()</code></h3>
+    <p>Returns battery voltage (3.25V–4.2V). Averages 10 readings. First read discarded.</p>
+
+    <!-- LED MOUTH -->
+    <h2 id="led-mouth">LED Mouth</h2>
+    <h3><code>putMouth(mouth, predefined)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>mouth</code></td><td><code>unsigned long int</code></td><td>—</td><td>If <code>predefined=true</code>: index (0–30). If <code>false</code>: raw 30-bit pattern.</td></tr>
+      <tr><td><code>predefined</code></td><td><code>bool</code></td><td><code>true</code></td><td>Whether to look up by index or use raw value.</td></tr>
+    </table>
+
+    <h3><code>putAnimationMouth(anim, index)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>anim</code></td><td><code>unsigned long int</code></td><td>Animation ID: <code>littleUuh</code> (0), <code>dreamMouth</code> (1), <code>adivinawi</code> (2), <code>wave</code> (3)</td></tr>
+      <tr><td><code>index</code></td><td><code>int</code></td><td>Frame index (0-based)</td></tr>
+    </table>
+
+    <h3><code>clearMouth()</code></h3>
+    <p>Clears all LEDs on the mouth matrix.</p>
+
+    <!-- SOUNDS -->
+    <h2 id="sounds">Sounds</h2>
+    <h3><code>_tone(noteFrequency, noteDuration, silentDuration)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>noteFrequency</code></td><td><code>float</code></td><td>Frequency in Hz</td></tr>
+      <tr><td><code>noteDuration</code></td><td><code>long</code></td><td>Note duration in ms</td></tr>
+      <tr><td><code>silentDuration</code></td><td><code>int</code></td><td>Silence after note in ms (0 treated as 1)</td></tr>
+    </table>
+
+    <h3><code>bendTones(initFreq, finalFreq, prop, noteDuration, silentDuration)</code></h3>
+    <table>
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><code>initFrequency</code></td><td><code>float</code></td><td>Starting frequency in Hz</td></tr>
+      <tr><td><code>finalFrequency</code></td><td><code>float</code></td><td>Ending frequency in Hz</td></tr>
+      <tr><td><code>prop</code></td><td><code>float</code></td><td>Frequency multiplier per step (typical: 1.01–1.05)</td></tr>
+      <tr><td><code>noteDuration</code></td><td><code>long</code></td><td>Duration of each step in ms</td></tr>
+      <tr><td><code>silentDuration</code></td><td><code>int</code></td><td>Silence between steps in ms</td></tr>
+    </table>
+
+    <h3><code>sing(songName)</code></h3>
+    <p>Plays a predefined song (0–18). See <a href="#song-ids">Song IDs</a>.</p>
+
+    <!-- GESTURES -->
+    <h2 id="gestures">Gestures</h2>
+    <h3><code>playGesture(gesture)</code></h3>
+    <p>Executes a complex gesture combining movement, sounds, and mouth animations. Returns Zowi to home with <code>happyOpen</code> when finished.</p>
+    <p>Gesture IDs: 0–12. See <a href="#gesture-ids">Gesture IDs</a>.</p>
+
+    <!-- CONSTANTS -->
+    <h2 id="constants">Constants</h2>
+    <table>
+      <tr><th>Constant</th><th>Value</th><th>Description</th></tr>
+      <tr><td><code>FORWARD</code></td><td><code>1</code></td><td>Forward direction</td></tr>
+      <tr><td><code>BACKWARD</code></td><td><code>-1</code></td><td>Backward direction</td></tr>
+      <tr><td><code>LEFT</code></td><td><code>1</code></td><td>Left direction</td></tr>
+      <tr><td><code>RIGHT</code></td><td><code>-1</code></td><td>Right direction</td></tr>
+      <tr><td><code>SMALL</code></td><td><code>5</code></td><td>Small amplitude</td></tr>
+      <tr><td><code>MEDIUM</code></td><td><code>15</code></td><td>Medium amplitude</td></tr>
+      <tr><td><code>BIG</code></td><td><code>30</code></td><td>Large amplitude</td></tr>
+      <tr><td><code>PIN_Buzzer</code></td><td><code>10</code></td><td>Default buzzer pin</td></tr>
+      <tr><td><code>PIN_Trigger</code></td><td><code>8</code></td><td>Default US trigger pin</td></tr>
+      <tr><td><code>PIN_Echo</code></td><td><code>9</code></td><td>Default US echo pin</td></tr>
+      <tr><td><code>PIN_NoiseSensor</code></td><td><code>A6</code></td><td>Default noise sensor pin</td></tr>
+    </table>
+
+    <!-- MOUTH INDICES -->
+    <h2 id="mouth-indices">Mouth Indices</h2>
+    <p>Used with <code>putMouth()</code>. Defined in <code>Zowi_mouths.h</code>.</p>
+    <table>
+      <tr><th>Index</th><th>Name</th><th>Description</th></tr>
+      <tr><td>0</td><td><code>zero</code></td><td>Digit 0</td></tr>
+      <tr><td>1</td><td><code>one</code></td><td>Digit 1</td></tr>
+      <tr><td>2</td><td><code>two</code></td><td>Digit 2</td></tr>
+      <tr><td>3</td><td><code>three</code></td><td>Digit 3</td></tr>
+      <tr><td>4</td><td><code>four</code></td><td>Digit 4</td></tr>
+      <tr><td>5</td><td><code>five</code></td><td>Digit 5</td></tr>
+      <tr><td>6</td><td><code>six</code></td><td>Digit 6</td></tr>
+      <tr><td>7</td><td><code>seven</code></td><td>Digit 7</td></tr>
+      <tr><td>8</td><td><code>eight</code></td><td>Digit 8</td></tr>
+      <tr><td>9</td><td><code>nine</code></td><td>Digit 9</td></tr>
+      <tr><td>10</td><td><code>smile</code></td><td>Smile</td></tr>
+      <tr><td>11</td><td><code>happyOpen</code></td><td>Happy (mouth open)</td></tr>
+      <tr><td>12</td><td><code>happyClosed</code></td><td>Happy (mouth closed)</td></tr>
+      <tr><td>13</td><td><code>heart</code></td><td>Heart shape</td></tr>
+      <tr><td>14</td><td><code>bigSurprise</code></td><td>Big surprise (O mouth)</td></tr>
+      <tr><td>15</td><td><code>smallSurprise</code></td><td>Small surprise</td></tr>
+      <tr><td>16</td><td><code>tongueOut</code></td><td>Tongue out</td></tr>
+      <tr><td>17</td><td><code>vamp1</code></td><td>Vampire teeth 1</td></tr>
+      <tr><td>18</td><td><code>vamp2</code></td><td>Vampire teeth 2</td></tr>
+      <tr><td>19</td><td><code>lineMouth</code></td><td>Straight line mouth</td></tr>
+      <tr><td>20</td><td><code>confused</code></td><td>Confused expression</td></tr>
+      <tr><td>21</td><td><code>diagonal</code></td><td>Diagonal line</td></tr>
+      <tr><td>22</td><td><code>sad</code></td><td>Sad face</td></tr>
+      <tr><td>23</td><td><code>sadOpen</code></td><td>Sad (mouth open)</td></tr>
+      <tr><td>24</td><td><code>sadClosed</code></td><td>Sad (mouth closed)</td></tr>
+      <tr><td>25</td><td><code>okMouth</code></td><td>OK mouth</td></tr>
+      <tr><td>26</td><td><code>xMouth</code></td><td>X mouth (error/no)</td></tr>
+      <tr><td>27</td><td><code>interrogation</code></td><td>Question mark</td></tr>
+      <tr><td>28</td><td><code>thunder</code></td><td>Thunder/lightning</td></tr>
+      <tr><td>29</td><td><code>culito</code></td><td>Little butt (factory marker)</td></tr>
+      <tr><td>30</td><td><code>angry</code></td><td>Angry face</td></tr>
+    </table>
+
+    <!-- SONG IDS -->
+    <h2 id="song-ids">Song IDs</h2>
+    <p>Used with <code>sing()</code>. Defined in <code>Zowi_sounds.h</code>.</p>
+    <table>
+      <tr><th>ID</th><th>Name</th><th>Description</th></tr>
+      <tr><td>0</td><td><code>S_connection</code></td><td>Connection melody (3 notes up)</td></tr>
+      <tr><td>1</td><td><code>S_disconnection</code></td><td>Disconnection melody (3 notes down)</td></tr>
+      <tr><td>2</td><td><code>S_buttonPushed</code></td><td>Button pressed (2 quick bends)</td></tr>
+      <tr><td>3</td><td><code>S_mode1</code></td><td>Mode 1 selected</td></tr>
+      <tr><td>4</td><td><code>S_mode2</code></td><td>Mode 2 selected</td></tr>
+      <tr><td>5</td><td><code>S_mode3</code></td><td>Mode 3 selected</td></tr>
+      <tr><td>6</td><td><code>S_surprise</code></td><td>Surprise (quick sweep up and down)</td></tr>
+      <tr><td>7</td><td><code>S_OhOoh</code></td><td>Oh-oh (sweep with tremolo)</td></tr>
+      <tr><td>8</td><td><code>S_OhOoh2</code></td><td>Oh-oh 2 (higher sweep with tremolo)</td></tr>
+      <tr><td>9</td><td><code>S_cuddly</code></td><td>Cuddly (bend up then down)</td></tr>
+      <tr><td>10</td><td><code>S_sleeping</code></td><td>Sleeping (low sweep up and down)</td></tr>
+      <tr><td>11</td><td><code>S_happy</code></td><td>Happy (sweep up and down)</td></tr>
+      <tr><td>12</td><td><code>S_superHappy</code></td><td>Super happy (fast high sweep)</td></tr>
+      <tr><td>13</td><td><code>S_happy_short</code></td><td>Happy short (two quick sweeps)</td></tr>
+      <tr><td>14</td><td><code>S_sad</code></td><td>Sad (slow descending bend)</td></tr>
+      <tr><td>15</td><td><code>S_confused</code></td><td>Confused (up-down-up sweep)</td></tr>
+      <tr><td>16</td><td><code>S_fart1</code></td><td>Fart 1 (quick upward sweep)</td></tr>
+      <tr><td>17</td><td><code>S_fart2</code></td><td>Fart 2 (faster higher sweep)</td></tr>
+      <tr><td>18</td><td><code>S_fart3</code></td><td>Fart 3 (up then down sweep)</td></tr>
+    </table>
+
+    <!-- GESTURE IDS -->
+    <h2 id="gesture-ids">Gesture IDs</h2>
+    <p>Used with <code>playGesture()</code>. Defined in <code>Zowi_gestures.h</code>.</p>
+    <table>
+      <tr><th>ID</th><th>Name</th><th>Description</th></tr>
+      <tr><td>0</td><td><code>ZowiHappy</code></td><td>Happy dance: swing + happy sounds</td></tr>
+      <tr><td>1</td><td><code>ZowiSuperHappy</code></td><td>Super happy: tiptoe swing + high-pitched sounds</td></tr>
+      <tr><td>2</td><td><code>ZowiSad</code></td><td>Sad slump: leans forward, descending tones, sad mouths</td></tr>
+      <tr><td>3</td><td><code>ZowiSleeping</code></td><td>Sleep: leans forward, dream mouth animation, snoring sounds</td></tr>
+      <tr><td>4</td><td><code>ZowiFart</code></td><td>Fart: bends in 3 positions, tongue out, fart sounds</td></tr>
+      <tr><td>5</td><td><code>ZowiConfused</code></td><td>Confused: leans left, confused mouth, confused sound</td></tr>
+      <tr><td>6</td><td><code>ZowiLove</code></td><td>Love: heart mouth, crusaito, cuddly sound</td></tr>
+      <tr><td>7</td><td><code>ZowiAngry</code></td><td>Angry: angry mouth, descending tones, head left/right</td></tr>
+      <tr><td>8</td><td><code>ZowiFretful</code></td><td>Fretful: angry mouth, tones, trembles 4 times</td></tr>
+      <tr><td>9</td><td><code>ZowiMagic</code></td><td>Magic: 4× adivinawi animation, rising/falling tones</td></tr>
+      <tr><td>10</td><td><code>ZowiWave</code></td><td>Wave: 2× wave animation, rising/falling tones</td></tr>
+      <tr><td>11</td><td><code>ZowiVictory</code></td><td>Victory: raises feet, tiptoe swing, super happy sounds</td></tr>
+      <tr><td>12</td><td><code>ZowiFail</code></td><td>Fail: bends down progressively, sad sounds, detach servos</td></tr>
+    </table>
+
+    <!-- ANIMATION IDS -->
+    <h2 id="animation-ids">Animation IDs</h2>
+    <p>Used with <code>putAnimationMouth()</code>. Defined in <code>Zowi_gestures.h</code>.</p>
+    <table>
+      <tr><th>ID</th><th>Name</th><th>Frames</th><th>Description</th></tr>
+      <tr><td>0</td><td><code>littleUuh</code></td><td>8</td><td>Mouth opening/closing animation (surprise)</td></tr>
+      <tr><td>1</td><td><code>dreamMouth</code></td><td>4</td><td>Dream/mouth opening animation (sleeping)</td></tr>
+      <tr><td>2</td><td><code>adivinawi</code></td><td>6</td><td>Magic fortune-teller animation</td></tr>
+      <tr><td>3</td><td><code>wave</code></td><td>10</td><td>Hand-wave animation across LED matrix</td></tr>
+    </table>
+  </div>
+</body>
+</html>

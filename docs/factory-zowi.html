@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Factory Zowi — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html" class="active">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>Factory Zowi</h1>
+    <p>A factory calibration and testing sketch for Zowi. Developed by BQ (Anita de Prado &amp; Jose Alberca, September 2015). Released under GPL.</p>
+
+    <h2>Purpose</h2>
+    <p>This sketch is used during manufacturing to verify that Zowi's hardware is working correctly before shipping. It tests the LED matrix, ultrasonic sensor, servos, and buttons in a sequential procedure.</p>
+
+    <h2>Procedure</h2>
+    <p>The sketch runs entirely in <code>setup()</code> — the <code>loop()</code> is empty. The operator follows a visual sequence on Zowi's LED mouth and interacts via the back buttons and ultrasonic sensor.</p>
+
+    <h3>Step 1 — Factory Name Initialization</h3>
+    <pre><code>char n = EEPROM.read(fac_eeAddress);
+if (n != '$') {
+    EEPROM.write(fac_eeAddress, '$');
+}</code></pre>
+    <p>If the EEPROM at address 5 does not already contain <code>$</code>, it writes the factory name marker. This ensures Zowi ships with a clean name.</p>
+
+    <h3>Step 2 — Button Release Check</h3>
+    <pre><code>while ((digitalRead(PIN_SecondButton) == 1) || (digitalRead(PIN_ThirdButton) == 1))</code></pre>
+    <p>Zowi waits for both back buttons to be released. While any button is held, it shows an <strong>X mouth</strong> on the LED matrix.</p>
+
+    <h3>Step 3 — Ultrasonic Sensor Test</h3>
+    <pre><code>while ((digitalRead(PIN_SecondButton) == 0) || (digitalRead(PIN_ThirdButton) == 0))</code></pre>
+    <p>With both buttons pressed, Zowi reads the ultrasonic sensor. If an object is within <strong>15 cm</strong>, it shows a <strong>heart</strong> on the LED mouth. Otherwise, it lights up the entire matrix.</p>
+
+    <h3>Step 4 — Servo Check</h3>
+    <pre><code>zowi.moveServos(500, checkPosition);  // {70, 110, 60, 120}</code></pre>
+    <p>Zowi moves its servos to a spread position to verify all four servos are attached and moving correctly.</p>
+
+    <h3>Step 5 — Button B Test</h3>
+    <p>Zowi waits for button B (pin 7) to be pressed. This verifies the button is functional.</p>
+
+    <h3>Step 6 — Final OK</h3>
+    <p>Zowi shows an OK mouth and returns all servos to home position (90°). The test is complete.</p>
+
+    <h2>Pin Mapping</h2>
+    <table>
+      <tr><th>Function</th><th>Pin</th></tr>
+      <tr><td>YL servo</td><td>2</td></tr>
+      <tr><td>YR servo</td><td>3</td></tr>
+      <tr><td>RL servo</td><td>4</td></tr>
+      <tr><td>RR servo</td><td>5</td></tr>
+      <tr><td>Button A</td><td>6</td></tr>
+      <tr><td>Button B</td><td>7</td></tr>
+      <tr><td>US Trigger</td><td>8</td></tr>
+      <tr><td>US Echo</td><td>9</td></tr>
+      <tr><td>LED data (SER)</td><td>11</td></tr>
+      <tr><td>LED latch (RCK)</td><td>12</td></tr>
+      <tr><td>LED clock (CLK)</td><td>13</td></tr>
+    </table>
+
+    <h2>Functions</h2>
+
+    <h3><code>TP_init(trigger_pin, echo_pin)</code></h3>
+    <p>Sends a 10 µs trigger pulse and returns the echo pulse width in microseconds (timeout: 100 ms).</p>
+
+    <h3><code>Distance(trigger_pin, echo_pin)</code></h3>
+    <p>Returns the distance in cm using <code>TP_init</code>. Formula: <code>microseconds / 29 / 2</code>. Returns 999 if no echo.</p>
+  </div>
+</body>
+</html>

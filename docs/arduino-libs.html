@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Libraries — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html" class="active">Arduino Libraries</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>Arduino Libraries for Zowi</h1>
+    <p>This document describes every Arduino library in the Zowi ecosystem and how to use them in your own sketches.</p>
+
+    <h2>Installation</h2>
+    <p>Copy each library folder into your Arduino libraries directory:</p>
+    <ul>
+      <li><strong>Windows:</strong> <code>My Documents\Arduino\libraries\</code></li>
+      <li><strong>macOS:</strong> <code>Documents/Arduino/libraries/</code></li>
+      <li><strong>Linux:</strong> <code>libraries/</code> inside your sketchbook folder</li>
+    </ul>
+    <p>After copying, restart the Arduino IDE. You should see them under <strong>Sketch → Include Library</strong>.</p>
+
+    <h2>Library Overview</h2>
+    <table>
+      <tr><th>Library</th><th>Role</th><th>Dependency of</th></tr>
+      <tr><td><strong>Zowi</strong></td><td>Top-level robot API (motion, gestures, sounds, mouth, sensors)</td><td>—</td></tr>
+      <tr><td><strong>Oscillator</strong></td><td>Sinusoidal servo motion engine</td><td>Zowi</td></tr>
+      <tr><td><strong>LedMatrix</strong></td><td>5x6 LED matrix via 74HC595 shift registers</td><td>Zowi</td></tr>
+      <tr><td><strong>US</strong></td><td>HC-SR04 ultrasonic distance sensor</td><td>Zowi</td></tr>
+      <tr><td><strong>BatReader</strong></td><td>Battery voltage/percentage reader</td><td>Zowi</td></tr>
+      <tr><td><strong>ZowiSerialCommand</strong></td><td>Serial command parser (standalone)</td><td>—</td></tr>
+      <tr><td><strong>EnableInterrupt</strong></td><td>Pin-change/external interrupts (standalone)</td><td>—</td></tr>
+    </table>
+
+    <h2>1. Zowi — Main Robot Library</h2>
+    <p>This is the top-level library. It depends on <code>Oscillator</code>, <code>LedMatrix</code>, <code>US</code>, <code>BatReader</code>, <code>Servo</code>, and <code>EEPROM</code>.</p>
+
+    <h3>Initialization</h3>
+    <pre><code>#include &lt;Zowi.h&gt;
+
+Zowi zowi;
+
+void setup() {
+    zowi.init(2, 3, 4, 5);
+}</code></pre>
+
+    <h3>Motion</h3>
+    <pre><code>zowi.walk(4, 1000, FORWARD);
+zowi.turn(4, 2000, LEFT);
+zowi.jump(1, 2000);
+zowi.bend(1, 1400, LEFT);
+zowi.shakeLeg(1, 2000, RIGHT);
+zowi.updown(1, 1000, 20);
+zowi.swing(1, 1000, 20);
+zowi.tiptoeSwing(1, 900, 20);
+zowi.jitter(1, 500, 20);
+zowi.ascendingTurn(1, 900, 20);
+zowi.moonwalker(1, 900, 20, LEFT);
+zowi.crusaito(1, 900, 20, FORWARD);
+zowi.flapping(1, 1000, 20, FORWARD);</code></pre>
+
+    <h3>Sensors &amp; Battery</h3>
+    <pre><code>float dist = zowi.getDistance();
+int noise = zowi.getNoise();
+double level = zowi.getBatteryLevel();
+double volts = zowi.getBatteryVoltage();</code></pre>
+
+    <h3>LED Mouth</h3>
+    <pre><code>zowi.putMouth(smile);
+zowi.putMouth(heart_code, false);
+zowi.putAnimationMouth(wave, 0);
+zowi.clearMouth();</code></pre>
+
+    <h3>Sounds &amp; Gestures</h3>
+    <pre><code>zowi.sing(S_connection);
+zowi.playGesture(ZowiHappy);</code></pre>
+
+    <h2>2. Oscillator — Servo Motion Engine</h2>
+    <p>Generates smooth sinusoidal motion for each servo. Zowi uses 4 instances internally (one per leg joint).</p>
+    <pre><code>#include &lt;Oscillator.h&gt;
+
+Oscillator osc;
+
+void setup() {
+    osc.attach(9);
+    osc.SetA(45);
+    osc.SetO(90);
+    osc.SetT(2000);
+    osc.SetPh(0);
+}
+
+void loop() {
+    osc.refresh();
+}</code></pre>
+
+    <h2>3. LedMatrix — LED Mouth Display</h2>
+    <p>Controls a 5x6 LED matrix via three 74HC595 shift registers (data=11, clock=13, latch=12 by default).</p>
+    <pre><code>LedMatrix matrix;
+matrix.writeFull(0b000001000010000100001000001111);
+matrix.setLed(1, 1);
+matrix.unsetLed(3, 4);
+matrix.clearMatrix();
+matrix.setEntireMatrix();</code></pre>
+
+    <h2>4. US — Ultrasonic Distance Sensor</h2>
+    <pre><code>US us;
+us.init(8, 9);
+float cm = us.read();</code></pre>
+
+    <h2>5. BatReader — Battery Monitor</h2>
+    <pre><code>BatReader bat;
+double volts = bat.readBatVoltage();
+double percent = bat.readBatPercent();</code></pre>
+
+    <h2>6. ZowiSerialCommand — Serial Command Parser</h2>
+    <pre><code>ZowiSerialCommand sc;
+
+void handleMove() {
+    char *arg = sc.next();
+}
+
+void setup() {
+    Serial.begin(9600);
+    sc.addCommand("MOVE", handleMove);
+    sc.addDefaultHandler(handleUnknown);
+}
+
+void loop() {
+    sc.readSerial();
+}</code></pre>
+
+    <h2>7. EnableInterrupt — Pin Interrupts</h2>
+    <pre><code>#include &lt;EnableInterrupt.h&gt;
+
+void buttonPressed() { }
+
+void setup() {
+    pinMode(7, INPUT_PULLUP);
+    enableInterrupt(7, buttonPressed, FALLING);
+}</code></pre>
+
+    <h2>Typical Sketch Structure</h2>
+    <pre><code>#include &lt;Zowi.h&gt;
+#include &lt;ZowiSerialCommand.h&gt;
+
+Zowi zowi;
+ZowiSerialCommand sc;
+
+void handleWalk() {
+    char *arg = sc.next();
+    int steps = arg ? atoi(arg) : 4;
+    zowi.walk(steps);
+}
+
+void setup() {
+    Serial.begin(9600);
+    zowi.init(2, 3, 4, 5);
+    sc.addCommand("WALK", handleWalk);
+}
+
+void loop() {
+    sc.readSerial();
+    if (zowi.getDistance() &lt; 15) {
+        zowi.turn(4, 1000, LEFT);
+    }
+}</code></pre>
+  </div>
+</body>
+</html>

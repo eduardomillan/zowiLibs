@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZOWI BASE — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html" class="active">ZOWI BASE</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>ZOWI BASE v2</h1>
+    <p>The default firmware for Zowi. Developed by BQ (Anita de Prado, Jose Alberca, Javier Isabel, Juan Gonzalez, Irene Sanz, December 2015). Released under GPL.</p>
+
+    <h2>Overview</h2>
+    <p>ZOWI_BASE_v2 is the main firmware that ships with every Zowi robot. It implements a 5-mode state machine accessible via the back buttons, plus a full serial command protocol for remote control via the ZowiApp (Bluetooth).</p>
+
+    <div class="mermaid-container">
+      <pre>
+stateDiagram-v2
+    [*] --> Boot
+    Boot --> Idle : setup complete
+    Idle --> Mode1_Dance : button A
+    Idle --> Mode2_Obstacle : button B
+    Idle --> Mode3_Noise : button A+B
+    Idle --> Mode4_Teleop : serial data received
+    Mode1_Dance --> Idle : any button
+    Mode2_Obstacle --> Idle : any button
+    Mode3_Noise --> Idle : any button
+    Mode4_Teleop --> Idle : serial stop
+    Idle --> Sleep : 80s inactivity
+    Sleep --> Idle : any button
+    state Idle {
+        [*] --> Awake
+        Awake --> Asleep : 80s
+        Asleep --> Awake : button press
+    }</pre>
+    </div>
+
+    <h2>Modes</h2>
+    <table>
+      <tr><th>Mode</th><th>Name</th><th>How to Select</th><th>Description</th></tr>
+      <tr><td>0</td><td>Idle</td><td>Default on boot</td><td>Zowi waits. After 80 seconds of inactivity, falls asleep.</td></tr>
+      <tr><td>1</td><td>Dance</td><td>Button <strong>A</strong></td><td>Zowi performs random dances.</td></tr>
+      <tr><td>2</td><td>Obstacle Detection</td><td>Button <strong>B</strong></td><td>Zowi walks autonomously, avoiding obstacles.</td></tr>
+      <tr><td>3</td><td>Noise Detection</td><td><strong>A + B</strong></td><td>Zowi reacts to claps/taps with a random dance.</td></tr>
+      <tr><td>4</td><td>Teleoperation</td><td>Serial data received</td><td>Zowi listens for serial commands from the ZowiApp.</td></tr>
+    </table>
+
+    <h2>Boot Sequence</h2>
+
+    <h3>1. Factory Name Check</h3>
+    <pre><code>if (EEPROM.read(5) == '$') {
+    EEPROM.put(5, '#');
+    EEPROM.put(6, '\0');
+    zowi.putMouth(culito);
+    while(true) delay(1000);
+}</code></pre>
+    <p>If the EEPROM name is <code>$</code> (factory marker), Zowi writes <code>#</code> as the first name and enters an infinite loop showing a <code>culito</code> mouth. This is the <strong>factory state</strong> — the robot ships like this and only exits this loop when the user sets a name via the app.</p>
+
+    <h3>2. Unbaptized Greeting</h3>
+    <pre><code>if (EEPROM.read(5) == '#') {
+    zowi.jump(1, 700);
+    zowi.shakeLeg(1, T, 1);
+    zowi.putMouth(smallSurprise);
+    zowi.swing(2, 800, 20);
+    zowi.home();
+}</code></pre>
+    <p>If the name is still <code>#</code> (never set by the user), Zowi performs an extended greeting animation. Once the user sets a name via the app, this greeting is skipped on subsequent boots.</p>
+
+    <h3>3. Boot Animations</h3>
+    <p>After the name check, Zowi plays a "littleUuh" mouth animation, a smile with <code>S_happy</code> sound, and if unbaptized: jump, shake leg, and swing.</p>
+
+    <h3>4. Idle Loop</h3>
+    <p>After setup, Zowi enters Mode 0 (Idle). Every 80 seconds of inactivity, it falls asleep with a dream animation and snoring sounds.</p>
+
+    <h2>Mode Selection</h2>
+    <table>
+      <tr><th>Buttons</th><th>Mode</th><th>Sound</th></tr>
+      <tr><td><strong>A</strong> only</td><td>1 — Dance</td><td><code>S_mode1</code></td></tr>
+      <tr><td><strong>B</strong> only</td><td>2 — Obstacle Detection</td><td><code>S_mode2</code></td></tr>
+      <tr><td><strong>A + B</strong></td><td>3 — Noise Detection</td><td><code>S_mode3</code></td></tr>
+    </table>
+
+    <h2>Mode Logic</h2>
+
+    <h3>Mode 0 — Idle</h3>
+    <p>Zowi stands still with a happy mouth. After 80 seconds of inactivity, it falls asleep: leans forward, plays a 4-frame dream mouth animation with soft tones, then shows <code>lineMouth</code> and plays <code>S_cuddly</code>. Any button press interrupts the sleep.</p>
+
+    <h3>Mode 1 — Dance</h3>
+    <p>Zowi picks a random dance (IDs 5–20) and performs it 1–5 times. For dances 15–18 (bend, shakeLeg), it does 1 repetition at a slower tempo (1600 ms). For all others, it does 3–5 repetitions at 1000 ms.</p>
+
+    <h3>Mode 2 — Obstacle Detection</h3>
+    <p>Zowi walks forward until it detects an obstacle within 15 cm. When an obstacle is found, it shows surprise, jumps, looks confused, steps back, and checks again. If clear, it smiles and turns left. If still blocked, it repeats the reaction.</p>
+
+    <h3>Mode 3 — Noise Detection</h3>
+    <p>Zowi listens for noise (analog reading ≥ 650). When detected, it shows surprise, plays a sound, performs a random dance, and returns to home.</p>
+
+    <h3>Mode 4 — Teleoperation</h3>
+    <p>Activated automatically when serial data is received. Zowi disables button interrupts and processes serial commands via <code>ZowiSerialCommand</code>.</p>
+
+    <h2>Serial Protocol</h2>
+    <p>Baud rate: <strong>115200</strong>. All frames use <code>&&</code> ... <code>%%</code>.</p>
+
+    <table>
+      <tr><th>Command</th><th>Arguments</th><th>Description</th></tr>
+      <tr><td><code>S</code></td><td>—</td><td>Stop and return to home</td></tr>
+      <tr><td><code>L</code></td><td><code>&lt;30-bit binary&gt;</code></td><td>Write a raw 30-bit pattern to the LED matrix</td></tr>
+      <tr><td><code>T</code></td><td><code>&lt;freq&gt; &lt;duration&gt;</code></td><td>Play a tone</td></tr>
+      <tr><td><code>M</code></td><td><code>&lt;moveId&gt; &lt;T&gt; &lt;moveSize&gt;</code></td><td>Execute a movement</td></tr>
+      <tr><td><code>H</code></td><td><code>&lt;gestureId&gt;</code></td><td>Play a gesture (1–13)</td></tr>
+      <tr><td><code>K</code></td><td><code>&lt;singId&gt;</code></td><td>Play a song (1–19)</td></tr>
+      <tr><td><code>C</code></td><td><code>&lt;trimYL&gt; &lt;trimYR&gt; &lt;trimRL&gt; &lt;trimRR&gt;</code></td><td>Set servo trim offsets</td></tr>
+      <tr><td><code>G</code></td><td><code>&lt;YL&gt; &lt;YR&gt; &lt;RL&gt; &lt;RR&gt;</code></td><td>Move servos to raw positions</td></tr>
+      <tr><td><code>R</code></td><td><code>&lt;name&gt;</code></td><td>Set Zowi's name</td></tr>
+      <tr><td><code>E</code></td><td>—</td><td>Request name</td></tr>
+      <tr><td><code>D</code></td><td>—</td><td>Request distance</td></tr>
+      <tr><td><code>N</code></td><td>—</td><td>Request noise</td></tr>
+      <tr><td><code>B</code></td><td>—</td><td>Request battery</td></tr>
+      <tr><td><code>I</code></td><td>—</td><td>Request program ID</td></tr>
+    </table>
+
+    <h2>Movement IDs</h2>
+    <table>
+      <tr><th>ID</th><th>Movement</th><th>Parameters</th></tr>
+      <tr><td>0</td><td>Home (stop)</td><td>—</td></tr>
+      <tr><td>1</td><td>Walk forward</td><td><code>T</code></td></tr>
+      <tr><td>2</td><td>Walk backward</td><td><code>T</code></td></tr>
+      <tr><td>3</td><td>Turn left</td><td><code>T</code></td></tr>
+      <tr><td>4</td><td>Turn right</td><td><code>T</code></td></tr>
+      <tr><td>5</td><td>Updown</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>6</td><td>Moonwalker left</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>7</td><td>Moonwalker right</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>8</td><td>Swing</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>9</td><td>Crusaito forward</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>10</td><td>Crusaito backward</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>11</td><td>Jump</td><td><code>T</code></td></tr>
+      <tr><td>12</td><td>Flapping forward</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>13</td><td>Flapping backward</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>14</td><td>Tiptoe swing</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>15</td><td>Bend left</td><td><code>T</code></td></tr>
+      <tr><td>16</td><td>Bend right</td><td><code>T</code></td></tr>
+      <tr><td>17</td><td>Shake leg left</td><td><code>T</code></td></tr>
+      <tr><td>18</td><td>Shake leg right</td><td><code>T</code></td></tr>
+      <tr><td>19</td><td>Jitter</td><td><code>T</code>, <code>moveSize</code></td></tr>
+      <tr><td>20</td><td>Ascending turn</td><td><code>T</code>, <code>moveSize</code></td></tr>
+    </table>
+
+    <h2>Gesture IDs</h2>
+    <table>
+      <tr><th>ID</th><th>Gesture</th></tr>
+      <tr><td>1</td><td>ZowiHappy</td></tr>
+      <tr><td>2</td><td>ZowiSuperHappy</td></tr>
+      <tr><td>3</td><td>ZowiSad</td></tr>
+      <tr><td>4</td><td>ZowiSleeping</td></tr>
+      <tr><td>5</td><td>ZowiFart</td></tr>
+      <tr><td>6</td><td>ZowiConfused</td></tr>
+      <tr><td>7</td><td>ZowiLove</td></tr>
+      <tr><td>8</td><td>ZowiAngry</td></tr>
+      <tr><td>9</td><td>ZowiFretful</td></tr>
+      <tr><td>10</td><td>ZowiMagic</td></tr>
+      <tr><td>11</td><td>ZowiWave</td></tr>
+      <tr><td>12</td><td>ZowiVictory</td></tr>
+      <tr><td>13</td><td>ZowiFail</td></tr>
+    </table>
+
+    <h2>Song IDs</h2>
+    <table>
+      <tr><th>ID</th><th>Song</th></tr>
+      <tr><td>1</td><td>S_connection</td></tr>
+      <tr><td>2</td><td>S_disconnection</td></tr>
+      <tr><td>3</td><td>S_surprise</td></tr>
+      <tr><td>4</td><td>S_OhOoh</td></tr>
+      <tr><td>5</td><td>S_OhOoh2</td></tr>
+      <tr><td>6</td><td>S_cuddly</td></tr>
+      <tr><td>7</td><td>S_sleeping</td></tr>
+      <tr><td>8</td><td>S_happy</td></tr>
+      <tr><td>9</td><td>S_superHappy</td></tr>
+      <tr><td>10</td><td>S_happy_short</td></tr>
+      <tr><td>11</td><td>S_sad</td></tr>
+      <tr><td>12</td><td>S_confused</td></tr>
+      <tr><td>13</td><td>S_fart1</td></tr>
+      <tr><td>14</td><td>S_fart2</td></tr>
+      <tr><td>15</td><td>S_fart3</td></tr>
+      <tr><td>16</td><td>S_mode1</td></tr>
+      <tr><td>17</td><td>S_mode2</td></tr>
+      <tr><td>18</td><td>S_mode3</td></tr>
+      <tr><td>19</td><td>S_buttonPushed</td></tr>
+    </table>
+
+    <h2>Key Functions</h2>
+
+    <h3><code>obstacleDetector()</code></h3>
+    <p>Reads the ultrasonic sensor. If distance &lt; 15 cm, sets <code>obstacleDetected = true</code>; otherwise <code>false</code>.</p>
+
+    <h3><code>move(moveId)</code></h3>
+    <p>Executes a movement by ID (0–20). Sends <code>sendFinalAck()</code> after each movement except for manual servo mode (ID ≥ 30).</p>
+
+    <h3><code>ZowiLowBatteryAlarm()</code></h3>
+    <p>If battery &lt; 45%, flashes a <code>thunder</code> mouth and plays an alternating alarm tone (880 Hz ↔ 2000 Hz) until a button is pressed.</p>
+
+    <h3><code>ZowiSleeping_withInterrupts()</code></h3>
+    <p>Zowi leans forward (servos to 100, 80, 60, 120) and plays a 4-frame dream mouth animation with soft rising/falling tones. After 4 cycles, shows <code>lineMouth</code> and plays <code>S_cuddly</code>. Fully interruptible by button press.</p>
+
+    <h2>Pin Mapping</h2>
+    <table>
+      <tr><th>Function</th><th>Pin</th></tr>
+      <tr><td>YL servo</td><td>2</td></tr>
+      <tr><td>YR servo</td><td>3</td></tr>
+      <tr><td>RL servo</td><td>4</td></tr>
+      <tr><td>RR servo</td><td>5</td></tr>
+      <tr><td>Button A</td><td>6</td></tr>
+      <tr><td>Button B</td><td>7</td></tr>
+      <tr><td>US Trigger</td><td>8</td></tr>
+      <tr><td>US Echo</td><td>9</td></tr>
+      <tr><td>Buzzer</td><td>10</td></tr>
+      <tr><td>LED data (SER)</td><td>11</td></tr>
+      <tr><td>LED latch (RCK)</td><td>12</td></tr>
+      <tr><td>LED clock (CLK)</td><td>13</td></tr>
+      <tr><td>Noise sensor</td><td>A6</td></tr>
+      <tr><td>Battery</td><td>A7</td></tr>
+    </table>
+  </div>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZOWI Alarm — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html" class="active">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>ZOWI Alarm v2</h1>
+    <p>A security-themed game for Zowi that turns the robot into a motion/noise alarm system and a patrolling guardian. Developed by BQ (Anita de Prado &amp; Jose Alberca, December 2015). Released under GPL.</p>
+
+    <h2>Overview</h2>
+    <p>Zowi Alarm has <strong>4 modes</strong> selected via the back buttons. The robot uses its ultrasonic sensor and noise sensor to detect intruders and trigger an audio-visual alarm.</p>
+
+    <h2>Modes</h2>
+    <table>
+      <tr><th>Mode</th><th>Name</th><th>How to Select</th><th>Description</th></tr>
+      <tr><td>0</td><td>Idle</td><td>Default on boot</td><td>Zowi waits. After 80 seconds of inactivity, falls asleep.</td></tr>
+      <tr><td>1</td><td>Alarm System</td><td>Button <strong>A</strong></td><td>Stationary alarm with 10s countdown and siren.</td></tr>
+      <tr><td>2</td><td>Zowi Guardian</td><td>Button <strong>B</strong> (or A+B)</td><td>Alarm + patrol routine every 8 seconds.</td></tr>
+      <tr><td>4</td><td>Teleoperation</td><td>Serial data received</td><td>Zowi listens for serial commands.</td></tr>
+    </table>
+
+    <h2>How to Play</h2>
+    <ol>
+      <li><strong>Power on Zowi</strong> — it plays a connection melody, shows a "littleUuh" animation, then smiles.</li>
+      <li><strong>Press a back button</strong> to select a mode.</li>
+      <li><strong>Mode 1 (Alarm System):</strong> Zowi starts a 10-second countdown (beeping with a shield symbol). After arming, it monitors distance and noise. If an intruder is detected (noise ≥ 680 or distance closer than baseline), it blasts a loud alternating siren (A5 ↔ A7) with a full-brightness alarm symbol. Press any button to stop.</li>
+      <li><strong>Mode 2 (Zowi Guardian):</strong> Same alarm, but every 8 seconds Zowi performs a patrol routine — looking around with angry expressions and re-calibrating the baseline distance.</li>
+    </ol>
+
+    <h2>Alarm Behavior</h2>
+    <p>Both Mode 1 and Mode 2 share the same alarm logic:</p>
+    <ol>
+      <li><strong>Arming:</strong> A 10-second countdown with a shield symbol and a beep every second.</li>
+      <li><strong>Monitoring:</strong> Zowi continuously checks <code>getNoise() &gt;= 680</code> and <code>getDistance() &lt; initDistance</code>.</li>
+      <li><strong>Trigger:</strong> When either condition is met, Zowi enters an alarm loop showing a full-brightness alarm symbol and playing an alternating siren (A5 ↔ A7, 880 Hz ↔ 3520 Hz) until a button is pressed.</li>
+    </ol>
+
+    <h2>Key Functions</h2>
+
+    <h3><code>ZowiArmingAlarmSystem()</code></h3>
+    <p>A 10-second countdown before the alarm activates. During the countdown, Zowi shows a shield symbol and plays a short beep every second. After the countdown, it records the baseline distance and activates the alarm.</p>
+
+    <h3><code>ZowiGuardian()</code></h3>
+    <p>A patrol routine called every 8 seconds in Mode 2. Zowi shows surprise, plays a cuddly sound, shows an angry mouth, trembles 4 times, looks left and right, then smiles. After patrolling, it re-calibrates the baseline distance.</p>
+
+    <h2>Alarm Behavior</h2>
+    <p>Both Mode 1 and Mode 2 share the same alarm logic:</p>
+    <ol>
+      <li><strong>Arming:</strong> A 10-second countdown with a shield symbol and a beep every second.</li>
+      <li><strong>Monitoring:</strong> Zowi continuously checks <code>getNoise() &gt;= 680</code> and <code>getDistance() &lt; initDistance</code>.</li>
+      <li><strong>Trigger:</strong> When either condition is met, Zowi enters an alarm loop showing a full-brightness alarm symbol and playing an alternating siren (A5 ↔ A7, 880 Hz ↔ 3520 Hz) until a button is pressed.</li>
+    </ol>
+
+    <h2>LED Symbols</h2>
+    <table>
+      <tr><th>Symbol</th><th>Pattern</th><th>Used In</th></tr>
+      <tr><td>Arming shield</td><td><code>0b00111111100001100001100001111111</code></td><td>Countdown phase</td></tr>
+      <tr><td>Alarm full</td><td><code>0b00111111111111111111111111111111</code></td><td>Intruder detected</td></tr>
+    </table>
+
+    <h2>Pin Mapping</h2>
+    <table>
+      <tr><th>Function</th><th>Pin</th></tr>
+      <tr><td>YL servo</td><td>2</td></tr>
+      <tr><td>YR servo</td><td>3</td></tr>
+      <tr><td>RL servo</td><td>4</td></tr>
+      <tr><td>RR servo</td><td>5</td></tr>
+      <tr><td>Button A</td><td>6</td></tr>
+      <tr><td>Button B</td><td>7</td></tr>
+      <tr><td>US Trigger</td><td>8</td></tr>
+      <tr><td>US Echo</td><td>9</td></tr>
+      <tr><td>Buzzer</td><td>10</td></tr>
+      <tr><td>LED data (SER)</td><td>11</td></tr>
+      <tr><td>LED latch (RCK)</td><td>12</td></tr>
+      <tr><td>LED clock (CLK)</td><td>13</td></tr>
+      <tr><td>Noise sensor</td><td>A6</td></tr>
+      <tr><td>Battery</td><td>A7</td></tr>
+    </table>
+  </div>
+</body>
+</html>

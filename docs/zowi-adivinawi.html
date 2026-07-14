@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZOWI Adivinawi — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-adivinawi.html" class="active">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>ZOWI Adivinawi v2</h1>
+    <p>A multi-game sketch for Zowi that turns the robot into an interactive fortune-teller, dice, and game partner. Developed by BQ (Anita de Prado &amp; Jose Alberca, December 2015). Released under GPL.</p>
+
+    <h2>Overview</h2>
+    <p>Adivinawi is a state-machine-based game with <strong>5 modes</strong> selected via Zowi's back buttons. The robot listens for noise (claps or taps) to trigger actions, and communicates through its LED mouth, sounds, and body movements.</p>
+
+    <h2>Modes</h2>
+    <table>
+      <tr><th>Mode</th><th>Name</th><th>How to Select</th><th>Description</th></tr>
+      <tr><td>0</td><td>Idle</td><td>Default on boot</td><td>Zowi waits. After 80 seconds of inactivity, falls asleep.</td></tr>
+      <tr><td>1</td><td>Zowi Adivino Adivinawi</td><td>Button <strong>A</strong></td><td>Fortune teller. Answers yes/no with magic animation.</td></tr>
+      <tr><td>2</td><td>Zowi Dado Dice</td><td>Button <strong>B</strong></td><td>Dice roller (1–6) shown on LED mouth.</td></tr>
+      <tr><td>3</td><td>Rock Paper Scissors</td><td><strong>A + B</strong></td><td>Play rock-paper-scissors against Zowi.</td></tr>
+      <tr><td>4</td><td>Teleoperation</td><td>Serial data received</td><td>Zowi listens for serial commands.</td></tr>
+    </table>
+
+    <h2>How to Play</h2>
+    <ol>
+      <li><strong>Power on Zowi</strong> — it plays a connection melody and shows a "littleUuh" animation, then smiles.</li>
+      <li><strong>Press a back button</strong> to select a mode (the mode number is shown on the LED mouth).</li>
+      <li><strong>Clap or tap</strong> near Zowi to trigger an action in the selected mode.</li>
+      <li>Press buttons again at any time to return to mode selection.</li>
+    </ol>
+
+    <h3>Mode 1 — Zowi Adivino Adivinawi (Fortune Teller)</h3>
+    <p>Ask Zowi a yes/no question, then clap or tap near it. Zowi detects the noise (analog reading ≥ 680) and responds with:</p>
+    <ul>
+      <li><strong>Yes</strong> — A happy dance (<code>swing</code> + <code>S_superHappy</code> melody) and an <code>okMouth</code> expression.</li>
+      <li><strong>No</strong> — An angry shake, <code>xMouth</code> expression, and a descending sad tone sequence.</li>
+    </ul>
+
+    <h3>Mode 2 — Zowi Dado Dice (Dice Roller)</h3>
+    <p>Clap or tap to roll a virtual 6-sided die. Zowi shows the result (1–6) on its LED mouth and plays a sound: 1 → sad, 6 → super happy, 2–5 → connection melody.</p>
+
+    <h3>Mode 3 — Rock Paper Scissors</h3>
+    <table>
+      <tr><th>Choice</th><th>LED Pattern</th><th>Sound</th></tr>
+      <tr><td>Rock</td><td><code>0b00000000001100011110011110001100</code></td><td><code>S_fart1</code></td></tr>
+      <tr><td>Paper</td><td><code>0b00011110010010010010010010011110</code></td><td><code>S_OhOoh2</code></td></tr>
+      <tr><td>Scissors</td><td><code>0b00000010010100001000010100000010</code></td><td><code>S_cuddly</code></td></tr>
+    </table>
+
+    <h2>Magic Animation (<code>ZowiMagics</code>)</h2>
+    <p>Before each answer in modes 1–3, Zowi plays a "magic" animation: a 6-frame mouth animation with a rising/falling tone sweep (400 Hz → 1000 Hz → 400 Hz), repeated 1–2 times.</p>
+    <pre>
+Frame 0:  █   █
+Frame 1:  █ █ █ █
+Frame 2:   █ █ █ █
+Frame 3:      █ █
+Frame 4:        ██
+Frame 5:  (empty)</pre>
+
+    <h2>Serial Protocol</h2>
+    <p>Baud rate: <strong>115200</strong>. All frames use <code>&&</code> ... <code>%%</code>.</p>
+    <table>
+      <tr><th>Command</th><th>Direction</th><th>Description</th></tr>
+      <tr><td><code>S</code></td><td>App → Zowi</td><td>Stop current action</td></tr>
+      <tr><td><code>R &lt;name&gt;</code></td><td>App → Zowi</td><td>Rename Zowi (stores in EEPROM at address 5)</td></tr>
+      <tr><td><code>E</code></td><td>App → Zowi</td><td>Request Zowi's name</td></tr>
+      <tr><td><code>B</code></td><td>App → Zowi</td><td>Request battery level</td></tr>
+      <tr><td><code>I</code></td><td>App → Zowi</td><td>Request program ID</td></tr>
+      <tr><td><code>A</code></td><td>Zowi → App</td><td>Acknowledge</td></tr>
+      <tr><td><code>F</code></td><td>Zowi → App</td><td>Final acknowledge</td></tr>
+    </table>
+
+    <h2>Key Functions</h2>
+
+    <h3><code>ZowiMagics(repetitions)</code></h3>
+    <p>Plays the signature "magic" animation: a 6-frame mouth animation with a rising tone sweep (400 Hz → 1000 Hz) and then a falling sweep (1000 Hz → 400 Hz). Interruptible by button press.</p>
+
+    <h3><code>ZowiSleeping_withInterrupts()</code></h3>
+    <p>After 80 seconds of inactivity in Mode 0, Zowi leans forward and plays a 4-frame dream mouth animation with soft rising/falling tones, then shows a <code>lineMouth</code> and plays a cuddly sound.</p>
+
+    <h3><code>ZowiLowBatteryAlarm()</code></h3>
+    <p>If battery is below 45%, Zowi flashes a <code>thunder</code> mouth and plays an alternating high-pitched alarm tone until a button is pressed.</p>
+
+    <h2>Interrupt System</h2>
+    <p>Both back buttons are configured with <code>RISING</code> edge interrupts via <code>EnableInterrupt</code>:</p>
+    <ul>
+      <li><strong>Button A</strong> (pin 6) → sets <code>buttonAPushed = true</code></li>
+      <li><strong>Button B</strong> (pin 7) → sets <code>buttonBPushed = true</code></li>
+    </ul>
+    <p>Any button press sets <code>buttonPushed = true</code> and shows <code>smallSurprise</code> on the mouth. All animations and sound loops check <code>buttonPushed</code> and break early, making the system fully interruptible.</p>
+
+    <h2>Pin Mapping</h2>
+    <table>
+      <tr><th>Function</th><th>Pin</th></tr>
+      <tr><td>YL servo</td><td>2</td></tr>
+      <tr><td>YR servo</td><td>3</td></tr>
+      <tr><td>RL servo</td><td>4</td></tr>
+      <tr><td>RR servo</td><td>5</td></tr>
+      <tr><td>Button A</td><td>6</td></tr>
+      <tr><td>Button B</td><td>7</td></tr>
+      <tr><td>US Trigger</td><td>8</td></tr>
+      <tr><td>US Echo</td><td>9</td></tr>
+      <tr><td>Buzzer</td><td>10</td></tr>
+      <tr><td>LED data (SER)</td><td>11</td></tr>
+      <tr><td>LED latch (RCK)</td><td>12</td></tr>
+      <tr><td>LED clock (CLK)</td><td>13</td></tr>
+      <tr><td>Noise sensor</td><td>A6</td></tr>
+      <tr><td>Battery</td><td>A7</td></tr>
+    </table>
+  </div>
+</body>
+</html>

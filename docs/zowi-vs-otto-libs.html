@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zowi vs Otto Libs — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-api.html">Zowi API Reference</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+      <div class="nav-section">Project Planning</div>
+      <a href="migrate-esp32.html">Migrate to ESP32</a>
+      <a href="zowi-vs-otto-esp32.html">Zowi vs Otto vs ESP32</a>
+      <a href="zowi-vs-otto-libs.html" class="active">Zowi vs Otto Libs</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+<h1 id="zowilibs-vs-ottodiylib-library-comparison">zowiLibs vs OttoDIYLib: Library Comparison</h1>
+<p>This document compares the <strong>Zowi Arduino libraries</strong> (<code>arduinolibs/</code> in this
+repository, by bq) with the official <strong>OttoDIYLib</strong>
+(<code>github.com/OttoDIY/OttoDIYLib</code>). It focuses on <strong>similarities and differences</strong>
+to inform an eventual Zowi → Otto-compatible port.</p>
+<blockquote>
+<p>TL;DR: The two libraries share a <strong>common ancestor</strong> (Obijuan's <code>Oscillator</code>
+and the same biped-robot design). Their motion/sound/gesture APIs are almost
+<strong>byte-for-byte identical</strong>. The main differences are the <strong>LED mouth driver</strong>
+(Zowi 74HC595 5×6 vs Otto MAX7219 8×8), <strong>ESP32 support</strong>, <strong>serial command
+handling</strong>, and a few <strong>extra Otto helpers</strong>.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#1-origin--lineage">1. Origin &amp; Lineage</a></li>
+<li><a href="#2-high-level-similarities">2. High-Level Similarities</a></li>
+<li><a href="#3-file--module-structure">3. File / Module Structure</a></li>
+<li><a href="#4-main-class-api-comparison">4. Main Class API Comparison</a></li>
+<li><a href="#5-initialization-signature-difference">5. Initialization Signature Difference</a></li>
+<li><a href="#6-sounds-identical">6. Sounds: Identical</a></li>
+<li><a href="#7-gestures-identical-values-different-prefix">7. Gestures: Identical Values, Different Prefix</a></li>
+<li><a href="#8-mouth--led-matrix-the-biggest-difference">8. Mouth / LED Matrix: The Biggest Difference</a></li>
+<li><a href="#9-servo--oscillator-engine">9. Servo / Oscillator Engine</a></li>
+<li><a href="#10-board--architecture-support">10. Board / Architecture Support</a></li>
+<li><a href="#11-serial--communication">11. Serial / Communication</a></li>
+<li><a href="#12-sensors--battery">12. Sensors &amp; Battery</a></li>
+<li><a href="#13-otto-only-features">13. Otto-Only Features</a></li>
+<li><a href="#14-zowi-only-features">14. Zowi-Only Features</a></li>
+<li><a href="#15-porting-implications">15. Porting Implications</a></li>
+<li><a href="#16-summary-table">16. Summary Table</a></li>
+</ul>
+<hr />
+<h2 id="1-origin-lineage">1. Origin &amp; Lineage</h2>
+<p>Both libraries descend from the same open-source biped robot work:</p>
+<ul>
+<li><strong>Obijuan (Juan González-Gómez)</strong> authored the <code>Oscillator</code> servo engine used
+  <strong>verbatim</strong> by both projects.</li>
+<li>bq's <strong>Zowi</strong> and the community <strong>Otto DIY</strong> were developed in the same era
+  from the same concept (4-servo biped, LED mouth, buzzer, ultrasonic sensor).</li>
+<li>As a result, the class methods, movement algorithms, sound tables, and gesture
+  definitions are <strong>the same code</strong> with cosmetic renaming (<code>Zowi</code> → <code>Otto</code>).</li>
+</ul>
+<p>This makes the two libraries <strong>highly interoperable</strong> at the API level.</p>
+<hr />
+<h2 id="2-high-level-similarities">2. High-Level Similarities</h2>
+<p>Both libraries provide:</p>
+<ul>
+<li>A single main class (<code>Zowi</code> / <code>Otto</code>) wrapping a 4-servo biped.</li>
+<li>The Obijuan <code>Oscillator</code> for smooth sinusoidal servo motion.</li>
+<li>Identical <strong>movement</strong> methods: <code>walk, turn, jump, bend, shakeLeg</code>.</li>
+<li>Identical <strong>dance</strong> methods: <code>moonwalker, crusaito, flapping, swing,
+  tiptoeSwing, jitter, updown, ascendingTurn</code>.</li>
+<li>Identical <strong>low-level motion</strong>: <code>_moveServos</code>, <code>oscillateServos</code>, <code>_execute</code>,
+  <code>home</code>, <code>getRestState</code>, <code>setRestState</code>.</li>
+<li>Identical <strong>calibration</strong>: <code>setTrims</code>, <code>saveTrimsOnEEPROM</code> (trims stored in
+  EEPROM addresses 0–3).</li>
+<li>Identical <strong>sound</strong> API: <code>_tone</code>, <code>bendTones</code>, <code>sing</code> + the same <code>S_*</code> sound
+  IDs and note-frequency table.</li>
+<li>Identical <strong>gesture</strong> API: <code>playGesture(int)</code> + the same 13 gesture IDs.</li>
+<li>Identical <strong>mouth</strong> API surface: <code>putMouth</code>, <code>putAnimationMouth</code>, <code>clearMouth</code>.</li>
+<li>Same motion <strong>constants</strong>: <code>FORWARD/BACKWARD/LEFT/RIGHT/SMALL/MEDIUM/BIG</code>.</li>
+</ul>
+<hr />
+<h2 id="3-file-module-structure">3. File / Module Structure</h2>
+<table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>zowiLibs</th>
+<th>OttoDIYLib</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Main class</td>
+<td><code>Zowi/Zowi.h</code> + <code>Zowi.cpp</code></td>
+<td><code>src/Otto.h</code> + <code>Otto.cpp</code></td>
+</tr>
+<tr>
+<td>Sounds</td>
+<td><code>Zowi/Zowi_sounds.h</code></td>
+<td><code>src/Otto_sounds.h</code></td>
+</tr>
+<tr>
+<td>Gestures</td>
+<td><code>Zowi/Zowi_gestures.h</code></td>
+<td><code>src/Otto_gestures.h</code></td>
+</tr>
+<tr>
+<td>Mouths</td>
+<td><code>Zowi/Zowi_mouths.h</code></td>
+<td><code>src/Otto_mouths.h</code></td>
+</tr>
+<tr>
+<td>LED matrix driver</td>
+<td><code>LedMatrix/</code> (separate lib, 74HC595)</td>
+<td><code>src/Otto_matrix.*</code> (MAX7219)</td>
+</tr>
+<tr>
+<td>Servo engine</td>
+<td><code>Oscillator/</code> (separate lib)</td>
+<td><code>Oscillator.*</code> (bundled in src)</td>
+</tr>
+<tr>
+<td>Ultrasonic</td>
+<td><code>US/</code> (separate lib)</td>
+<td>bundled/inline in Otto</td>
+</tr>
+<tr>
+<td>Battery</td>
+<td><code>BatReader/</code> (separate lib)</td>
+<td>not a dedicated class</td>
+</tr>
+<tr>
+<td>Serial parser</td>
+<td><code>ZowiSerialCommand/</code> (separate lib)</td>
+<td><code>SerialCommand</code> (bundled)</td>
+</tr>
+<tr>
+<td>Button interrupts</td>
+<td><code>EnableInterrupt/</code> (bundled dep)</td>
+<td>left to the sketch</td>
+</tr>
+</tbody>
+</table>
+<p>Key structural difference: <strong>zowiLibs ships several independent libraries</strong>
+(each in its own folder: <code>Zowi</code>, <code>Oscillator</code>, <code>US</code>, <code>LedMatrix</code>, <code>BatReader</code>,
+<code>ZowiSerialCommand</code>, <code>EnableInterrupt</code>). <strong>OttoDIYLib bundles everything under
+one <code>src/</code></strong> as a single Arduino library.</p>
+<hr />
+<h2 id="4-main-class-api-comparison">4. Main Class API Comparison</h2>
+<p>Comparing <code>Zowi.h</code> and <code>Otto.h</code>, the public method sets are almost identical.</p>
+<p><strong>Common to both (identical signatures):</strong></p>
+<pre><code>attachServos(), detachServos()
+setTrims(YL,YR,RL,RR), saveTrimsOnEEPROM()
+_moveServos(time, target[]), oscillateServos(A,O,T,phase,cycle)
+home(), getRestState(), setRestState(state)
+jump, walk, turn, bend, shakeLeg
+updown, swing, tiptoeSwing, jitter, ascendingTurn
+moonwalker, crusaito, flapping
+putMouth, putAnimationMouth, clearMouth
+_tone, bendTones, sing
+playGesture
+</code></pre>
+<p><strong>Only in Otto:</strong></p>
+<pre><code>_moveSingle(position, servo_number)      // move one servo
+initMATRIX(DIN, CS, CLK, rotate)         // MAX7219 setup
+matrixIntensity(intensity)               // MAX7219 brightness
+setLed(X, Y, value)                      // 8x8 pixel control
+writeText(s, scrollspeed)                // scrolling text on matrix
+enableServoLimit(speed), disableServoLimit()  // servo speed limiter
+</code></pre>
+<p><strong>Only in Zowi:</strong></p>
+<pre><code>getDistance()        // ultrasonic (US lib) exposed on the class
+getNoise()           // noise sensor via analogRead
+getBatteryLevel()    // battery % (BatReader)
+getBatteryVoltage()  // battery voltage (BatReader)
+</code></pre>
+<blockquote>
+<p>Note: Otto can still read sensors, but in Otto sketches these are typically
+done inline/with helper libs rather than as methods on the <code>Otto</code> class.
+Zowi promotes sensors/battery to first-class class methods.</p>
+</blockquote>
+<hr />
+<h2 id="5-initialization-signature-difference">5. Initialization Signature Difference</h2>
+<p>The <code>init()</code> signatures differ, reflecting how each library treats peripherals:</p>
+<p><strong>Zowi</strong> (buzzer, noise sensor, and ultrasonic pins are all parameters):</p>
+<pre><code class="language-cpp">void init(int YL, int YR, int RL, int RR,
+          bool load_calibration = true,
+          int NoiseSensor = PIN_NoiseSensor,
+          int Buzzer = PIN_Buzzer,
+          int USTrigger = PIN_Trigger,
+          int USEcho = PIN_Echo);
+</code></pre>
+<p><strong>Otto</strong> (only buzzer is a parameter):</p>
+<pre><code class="language-cpp">void init(int YL, int YR, int RL, int RR,
+          bool load_calibration, int Buzzer);
+</code></pre>
+<p>The 4 servo pins + calibration flag are common. Zowi bakes in more of the Zowi
+hardware (US + noise sensor) at init time; Otto keeps <code>init()</code> leaner.</p>
+<hr />
+<h2 id="6-sounds-identical">6. Sounds: Identical</h2>
+<p><code>Zowi_sounds.h</code> and <code>Otto_sounds.h</code> are effectively the same file. Both define
+the same note-frequency table (<code>note_C0</code> … <code>note_D8</code>) and the <strong>same 19 sound
+IDs with identical values</strong>:</p>
+<pre><code>S_connection=0  S_disconnection=1  S_buttonPushed=2
+S_mode1=3       S_mode2=4          S_mode3=5
+S_surprise=6    S_OhOoh=7          S_OhOoh2=8
+S_cuddly=9      S_sleeping=10      S_happy=11
+S_superHappy=12 S_happy_short=13   S_sad=14
+S_confused=15   S_fart1=16         S_fart2=17   S_fart3=18
+</code></pre>
+<p><code>sing(int songName)</code>, <code>_tone(...)</code>, and <code>bendTones(...)</code> behave the same.</p>
+<hr />
+<h2 id="7-gestures-identical-values-different-prefix">7. Gestures: Identical Values, Different Prefix</h2>
+<p>The gesture IDs are <strong>numerically identical</strong>; only the macro prefix differs
+(<code>Zowi*</code> vs <code>Otto*</code>):</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Zowi</th>
+<th>Otto</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>ZowiHappy</code></td>
+<td><code>OttoHappy</code></td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>ZowiSuperHappy</code></td>
+<td><code>OttoSuperHappy</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>ZowiSad</code></td>
+<td><code>OttoSad</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>ZowiSleeping</code></td>
+<td><code>OttoSleeping</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>ZowiFart</code></td>
+<td><code>OttoFart</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>ZowiConfused</code></td>
+<td><code>OttoConfused</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>ZowiLove</code></td>
+<td><code>OttoLove</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>ZowiAngry</code></td>
+<td><code>OttoAngry</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>ZowiFretful</code></td>
+<td><code>OttoFretful</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>ZowiMagic</code></td>
+<td><code>OttoMagic</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>ZowiWave</code></td>
+<td><code>OttoWave</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>ZowiVictory</code></td>
+<td><code>OttoVictory</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>ZowiFail</code></td>
+<td><code>OttoFail</code></td>
+</tr>
+</tbody>
+</table>
+<p>Because the underlying integers match, <code>playGesture()</code> is cross-compatible: a
+simple <code>#define OttoHappy ZowiHappy</code> alias layer would suffice.</p>
+<hr />
+<h2 id="8-mouth-led-matrix-the-biggest-difference">8. Mouth / LED Matrix: The Biggest Difference</h2>
+<p>This is the <strong>most significant hardware/software difference</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Zowi</th>
+<th>Otto</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Display</td>
+<td>5×6 LED matrix</td>
+<td>8×8 LED matrix</td>
+</tr>
+<tr>
+<td>Driver IC</td>
+<td><strong>74HC595</strong> shift register</td>
+<td><strong>MAX7219</strong></td>
+</tr>
+<tr>
+<td>Library</td>
+<td><code>LedMatrix</code> (bit-bang SER/CLK/RCK)</td>
+<td><code>Otto_matrix</code> (SPI-like MAX7219)</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td><code>unsigned long memory</code> (30 bits)</td>
+<td>8×8 buffer</td>
+</tr>
+<tr>
+<td>Extra features</td>
+<td>none</td>
+<td>brightness, <code>setLed(x,y)</code>, scrolling <code>writeText()</code></td>
+</tr>
+<tr>
+<td>Init</td>
+<td>via <code>LedMatrix</code> constructor pins</td>
+<td><code>initMATRIX(DIN, CS, CLK, rotate)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both expose <code>putMouth</code>, <code>putAnimationMouth</code>, <code>clearMouth</code>, but the <strong>bitmap
+encoding differs</strong> (5×6 vs 8×8), so mouth graphics are <strong>not</strong> directly
+interchangeable. Otto additionally supports <strong>text scrolling</strong> and per-pixel
+control that Zowi's 74HC595 driver does not.</p>
+<hr />
+<h2 id="9-servo-oscillator-engine">9. Servo / Oscillator Engine</h2>
+<ul>
+<li>Both use <strong>Obijuan's <code>Oscillator</code></strong> class with the same API
+  (<code>SetA/SetO/SetT/SetPh/SetTrim/SetPosition/refresh/attach/detach</code>).</li>
+<li>Motion algorithms (<code>_moveServos</code>, <code>oscillateServos</code>, <code>_execute</code>) are the same.</li>
+<li><strong>Otto adds a servo speed limiter</strong> (<code>enableServoLimit</code> /
+  <code>SERVO_LIMIT_DEFAULT = 240</code> deg/s) and <code>_moveSingle()</code>, which Zowi lacks.</li>
+<li>Servo indexing convention is the same order: <code>{YL, YR, RL, RR}</code> (Otto docs
+  label them LeftLeg/RightLeg/LeftFoot/RightFoot — same physical mapping).</li>
+</ul>
+<hr />
+<h2 id="10-board-architecture-support">10. Board / Architecture Support</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>zowiLibs</th>
+<th>OttoDIYLib</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AVR (UNO/Nano/bq Zum)</td>
+<td>✅ (original target)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>ESP8266</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>ESP32</td>
+<td>❌ (needs porting)</td>
+<td>✅ (<code>#ifdef ARDUINO_ARCH_ESP32</code> → <code>ESP32Servo.h</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Otto.h already switches between <code>&lt;Servo.h&gt;</code> and <code>&lt;ESP32Servo.h&gt;</code> at compile
+time; zowiLibs hardcodes <code>&lt;Servo.h&gt;</code> and depends on the AVR-only
+<code>EnableInterrupt</code> library, so it needs the migration described in
+<code>MIGRATE_ESP32.md</code> to run on ESP32.</p>
+<hr />
+<h2 id="11-serial-communication">11. Serial / Communication</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>zowiLibs</th>
+<th>OttoDIYLib</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parser</td>
+<td><code>ZowiSerialCommand</code> (fork of Steven Cogswell's <code>SerialCommand</code>)</td>
+<td><code>SerialCommand</code> (same lineage)</td>
+</tr>
+<tr>
+<td>Protocol</td>
+<td>ZowiApp: single-letter cmds <code>S,L,T,M,H,K,C,G,R,E,D,N,B,I</code>, framed <code>&amp;&amp;...%%</code></td>
+<td>Otto app: its own command set</td>
+</tr>
+<tr>
+<td>Bluetooth</td>
+<td>External module on hardware <code>Serial</code></td>
+<td>External module (AVR) or <strong>native BLE on ESP32</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Both serial parsers share the same origin, but the <strong>application-level
+protocols differ</strong> (ZowiApp vs Otto app), which matters for app compatibility.</p>
+<hr />
+<h2 id="12-sensors-battery">12. Sensors &amp; Battery</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>zowiLibs</th>
+<th>OttoDIYLib</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ultrasonic</td>
+<td>dedicated <code>US</code> lib + <code>getDistance()</code> method</td>
+<td>inline / helper, sketch-driven</td>
+</tr>
+<tr>
+<td>Noise sensor</td>
+<td><code>getNoise()</code> method (<code>analogRead</code>)</td>
+<td>sketch-driven <code>analogRead</code></td>
+</tr>
+<tr>
+<td>Battery</td>
+<td>dedicated <code>BatReader</code> lib + <code>getBatteryLevel/Voltage()</code></td>
+<td>no dedicated class</td>
+</tr>
+</tbody>
+</table>
+<p>Zowi exposes richer <strong>on-class</strong> sensor/battery helpers; Otto keeps the core
+class focused on motion + mouth and defers sensors to the sketch/examples.</p>
+<hr />
+<h2 id="13-otto-only-features">13. Otto-Only Features</h2>
+<ul>
+<li><code>_moveSingle()</code> — move a single servo.</li>
+<li>Full <strong>MAX7219 8×8 matrix</strong> support: <code>initMATRIX</code>, <code>matrixIntensity</code>,
+  <code>setLed</code>, <code>writeText</code> (scrolling text).</li>
+<li><strong>Servo speed limiter</strong> (<code>enableServoLimit</code> / <code>disableServoLimit</code>).</li>
+<li><strong>ESP8266 / ESP32</strong> architecture support out of the box.</li>
+<li>Larger, actively-maintained example set and Arduino Library Manager listing.</li>
+</ul>
+<hr />
+<h2 id="14-zowi-only-features">14. Zowi-Only Features</h2>
+<ul>
+<li>On-class <strong>battery</strong> monitoring (<code>BatReader</code>: <code>getBatteryLevel</code>,
+  <code>getBatteryVoltage</code>).</li>
+<li>On-class <strong>noise sensor</strong> (<code>getNoise</code>) and <strong>ultrasonic</strong> (<code>getDistance</code>).</li>
+<li><strong>ZowiApp protocol</strong> integration and the specific <code>&amp;&amp;...%%</code> framing.</li>
+<li>Modular per-feature library layout (each peripheral is its own library).</li>
+<li><code>EnableInterrupt</code>-based button handling packaged with the project.</li>
+</ul>
+<hr />
+<h2 id="15-porting-implications">15. Porting Implications</h2>
+<p>Given the near-identical core, making Zowi Otto-compatible is mostly a matter of
+<strong>thin adaptation layers</strong> rather than a rewrite:</p>
+<ol>
+<li><strong>API alias layer</strong> — <code>#define</code>/wrapper mapping <code>Otto*</code> names to <code>Zowi*</code>
+   (gestures, sounds) and an <code>Otto</code> facade delegating to the Zowi motion core.
+   Movement/dance/sound methods already match 1:1.</li>
+<li><strong>init() reconciliation</strong> — adapt Otto's <code>init(...,Buzzer)</code> onto Zowi's
+   richer <code>init()</code> (default the extra Zowi pins).</li>
+<li><strong>Mouth abstraction</strong> — the real work: bridge Zowi's 74HC595 5×6 driver and
+   Otto's MAX7219 8×8 API (<code>IMouth</code> interface + best-effort bitmap mapping).</li>
+<li><strong>ESP32 support</strong> — adopt Otto's <code>#ifdef ARDUINO_ARCH_ESP32</code> pattern and the
+   changes in <code>MIGRATE_ESP32.md</code> (ESP32Servo, EEPROM emulation, interrupts,
+   tone, ADC rescale).</li>
+<li><strong>Protocol layer</strong> — keep ZowiApp parsing; optionally add Otto app / BLE.</li>
+</ol>
+<p>The shared <code>Oscillator</code> and identical motion/sound/gesture tables mean
+<strong>movement, sound, and gesture behavior transfer with essentially no changes</strong>.</p>
+<hr />
+<h2 id="16-summary-table">16. Summary Table</h2>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>zowiLibs</th>
+<th>OttoDIYLib</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Servo engine</td>
+<td>Obijuan <code>Oscillator</code></td>
+<td>Obijuan <code>Oscillator</code></td>
+<td><strong>Same</strong></td>
+</tr>
+<tr>
+<td>Movements/dances</td>
+<td>full set</td>
+<td>full set</td>
+<td><strong>Identical API</strong></td>
+</tr>
+<tr>
+<td>Sound IDs &amp; notes</td>
+<td><code>S_*</code> 0–18</td>
+<td><code>S_*</code> 0–18</td>
+<td><strong>Identical</strong></td>
+</tr>
+<tr>
+<td>Gesture IDs</td>
+<td><code>Zowi*</code> 0–12</td>
+<td><code>Otto*</code> 0–12</td>
+<td><strong>Identical values</strong></td>
+</tr>
+<tr>
+<td>Calibration/EEPROM</td>
+<td>trims 0–3</td>
+<td>trims 0–3</td>
+<td><strong>Same</strong></td>
+</tr>
+<tr>
+<td>Mouth display</td>
+<td>74HC595 5×6</td>
+<td>MAX7219 8×8</td>
+<td><strong>Different</strong></td>
+</tr>
+<tr>
+<td>Single-servo / limiter</td>
+<td>✗</td>
+<td>✓</td>
+<td>Otto extra</td>
+</tr>
+<tr>
+<td>Sensors/battery on class</td>
+<td>✓</td>
+<td>✗ (sketch)</td>
+<td>Zowi extra</td>
+</tr>
+<tr>
+<td>Architectures</td>
+<td>AVR only</td>
+<td>AVR + ESP8266 + ESP32</td>
+<td>Otto broader</td>
+</tr>
+<tr>
+<td>Serial protocol</td>
+<td>ZowiApp <code>&amp;&amp;...%%</code></td>
+<td>Otto app</td>
+<td>Different</td>
+</tr>
+<tr>
+<td>Packaging</td>
+<td>multiple libs</td>
+<td>single <code>src/</code></td>
+<td>Different layout</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="17-references">17. References</h2>
+<ul>
+<li>Zowi libraries: <code>arduinolibs/</code> in this repository.</li>
+<li>OttoDIYLib: <code>github.com/OttoDIY/OttoDIYLib</code></li>
+<li>Oscillator author: Juan González-Gómez (Obijuan).</li>
+<li>Companion docs: <code>docs/project/MIGRATE_ESP32.md</code>,
+  <code>docs/project/ZOWI_VS_OTTO_VS_ESP32.md</code>.</li>
+</ul>
+  </div>
+</body>
+</html>

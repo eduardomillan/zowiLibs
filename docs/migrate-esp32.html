@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Migrate to ESP32 — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-api.html">Zowi API Reference</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+      <div class="nav-section">Project Planning</div>
+      <a href="migrate-esp32.html" class="active">Migrate to ESP32</a>
+      <a href="zowi-vs-otto-esp32.html">Zowi vs Otto vs ESP32</a>
+      <a href="zowi-vs-otto-libs.html">Zowi vs Otto Libs</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+<h1 id="migrating-zowi-source-code-to-esp32">Migrating Zowi Source Code to ESP32</h1>
+<p>This document describes a detailed plan to port the Zowi source code (currently
+targeting the <strong>bq Zum</strong> board, an Arduino UNO-compatible board based on the
+8-bit <strong>ATmega328P</strong>) to an <strong>ESP32</strong> (32-bit Xtensa LX6 / RISC-V, dual-core,
+3.3 V logic, Wi-Fi + Bluetooth).</p>
+<blockquote>
+<p><strong>Note:</strong> The precompiled <code>.hex</code> binaries in <code>code/</code> are AVR machine code and
+can <strong>never</strong> run on the ESP32. This plan is exclusively about recompiling the
+<strong>source code</strong> (<code>.ino</code> sketches + the libraries in <code>arduinolibs/</code>) for the
+ESP32 target.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#1-goals-and-scope">1. Goals and Scope</a></li>
+<li><a href="#2-summary-of-avr-specific-dependencies-found">2. Summary of AVR-Specific Dependencies Found</a></li>
+<li><a href="#3-toolchain-setup">3. Toolchain Setup</a></li>
+<li><a href="#4-pin-mapping-plan">4. Pin Mapping Plan</a></li>
+<li><a href="#5-library-by-library-migration-steps">5. Library-by-Library Migration Steps</a></li>
+<li><a href="#51-oscillator-arduinolibsoscillator">5.1 Oscillator (<code>arduinolibs/Oscillator</code>)</a></li>
+<li><a href="#52-servo-count--ledc-channels">5.2 Servo count / LEDC channels</a></li>
+<li><a href="#53-eeprom-zowicpp">5.3 EEPROM (<code>Zowi.cpp</code>)</a></li>
+<li><a href="#54-buttons--enableinterrupt-ino">5.4 Buttons / EnableInterrupt (<code>*.ino</code>)</a></li>
+<li><a href="#55-sound--tone-zowicpp_tone">5.5 Sound / tone (<code>Zowi.cpp:_tone</code>)</a></li>
+<li><a href="#56-battery-reader-batreaderhcpp">5.6 Battery reader (<code>BatReader.h/.cpp</code>)</a></li>
+<li><a href="#57-ultrasonic-sensor-uscpp">5.7 Ultrasonic sensor (<code>US.cpp</code>)</a></li>
+<li><a href="#58-led-matrix-ledmatrixcpp">5.8 LED matrix (<code>LedMatrix.cpp</code>)</a></li>
+<li><a href="#59-zowi-core-zowicpph">5.9 Zowi core (<code>Zowi.cpp/.h</code>)</a></li>
+<li><a href="#510-serial--bluetooth-ino-zowiserialcommand">5.10 Serial / Bluetooth (<code>*.ino</code>, ZowiSerialCommand)</a></li>
+<li><a href="#6-sketch-level-changes">6. Sketch-Level Changes</a></li>
+<li><a href="#7-validation-plan">7. Validation Plan</a></li>
+<li><a href="#8-risks-and-open-questions">8. Risks and Open Questions</a></li>
+<li><a href="#9-suggested-milestones">9. Suggested Milestones</a></li>
+</ul>
+<hr />
+<h2 id="1-goals-and-scope">1. Goals and Scope</h2>
+<ul>
+<li>Compile and run the following sketches on ESP32:</li>
+<li><code>code/base/ZOWI_BASE_v2.ino</code></li>
+<li><code>code/factoryZowi/factoryZowi.ino</code></li>
+<li><code>code/games/ZOWI_Adivinawi_v2/ZOWI_Adivinawi_v2.ino</code></li>
+<li><code>code/games/ZOWI_Alarm_v2/ZOWI_Alarm_v2.ino</code></li>
+<li>Port the supporting libraries in <code>arduinolibs/</code>:</li>
+<li><code>Zowi</code>, <code>Oscillator</code>, <code>US</code>, <code>LedMatrix</code>, <code>BatReader</code>, <code>ZowiSerialCommand</code>,
+    <code>EnableInterrupt</code></li>
+<li>Preserve the public API of the <code>Zowi</code> class so the sketches remain (mostly)
+  unchanged.</li>
+</ul>
+<p>Out of scope: redesigning the robot electronics. This plan assumes the same
+peripherals (4 servos, HC-SR04 ultrasonic sensor, 74HC595-driven LED matrix,
+buzzer, noise sensor, battery divider, 2 buttons) are wired to ESP32 GPIOs.</p>
+<hr />
+<h2 id="2-summary-of-avr-specific-dependencies-found">2. Summary of AVR-Specific Dependencies Found</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Location</th>
+<th>AVR dependency</th>
+<th>ESP32 impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Servo control</td>
+<td><code>Oscillator.h/.cpp</code>, <code>Zowi</code></td>
+<td><code>&lt;Servo.h&gt;</code> (AVR Timer1)</td>
+<td>Replace with <code>ESP32Servo</code> (LEDC PWM)</td>
+</tr>
+<tr>
+<td>EEPROM</td>
+<td><code>Zowi.cpp:28,77</code></td>
+<td><code>&lt;EEPROM.h&gt;</code> direct read/write</td>
+<td>Use ESP32 <code>EEPROM</code> emulation (<code>begin</code>/<code>commit</code>) or <code>Preferences</code></td>
+</tr>
+<tr>
+<td>Buttons / interrupts</td>
+<td><code>*.ino</code></td>
+<td><code>&lt;EnableInterrupt.h&gt;</code>, <code>enableInterrupt()</code>, <code>disableInterrupt()</code></td>
+<td>Not compatible; use core <code>attachInterrupt(digitalPinToInterrupt(...))</code></td>
+</tr>
+<tr>
+<td>Buzzer / sound</td>
+<td><code>Zowi.cpp:709</code></td>
+<td><code>tone()</code> / <code>noTone()</code></td>
+<td>Not implemented in older ESP32 cores; use LEDC tone or <code>ESP32Servo</code>'s tone, or a <code>tone()</code> shim</td>
+</tr>
+<tr>
+<td>Analog read (noise)</td>
+<td><code>Zowi.cpp:549,552</code></td>
+<td><code>analogRead(A6)</code> 10-bit, 5 V ref</td>
+<td>ESP32 ADC is 12-bit, 3.3 V, pins are different; rescale</td>
+</tr>
+<tr>
+<td>Battery reader</td>
+<td><code>BatReader.h:21-24</code></td>
+<td><code>analogRead(A7)</code>, <code>ANA_REF 5</code>, <code>/1024</code></td>
+<td>Rescale for 12-bit ADC and 3.3 V ref; A7 does not exist</td>
+</tr>
+<tr>
+<td>Ultrasonic</td>
+<td><code>US.cpp</code></td>
+<td><code>pulseIn</code>, <code>digitalWrite</code>, <code>delayMicroseconds</code></td>
+<td>Portable, but verify 5 V Echo -&gt; use level shifter/divider to 3.3 V</td>
+</tr>
+<tr>
+<td>LED matrix</td>
+<td><code>LedMatrix.cpp:70-86</code></td>
+<td><code>asm volatile ("nop")</code> timing, pins 11/12/13 (SPI)</td>
+<td><code>nop</code> compiles but timing differs; remap pins; consider <code>shiftOut</code></td>
+</tr>
+<tr>
+<td>Pin numbers</td>
+<td>all sketches / libs</td>
+<td><code>2..13</code>, <code>A6</code>, <code>A7</code></td>
+<td>Remap to valid ESP32 GPIOs</td>
+</tr>
+<tr>
+<td>Serial / Bluetooth</td>
+<td><code>*.ino</code></td>
+<td><code>Serial</code> at 115200 for BT module</td>
+<td>ESP32 has native BT (<code>BluetoothSerial</code>); can drop external module</td>
+</tr>
+<tr>
+<td>PROGMEM / flash tables</td>
+<td><code>Zowi_mouths.h</code>, <code>Zowi_sounds.h</code>, <code>Zowi_gestures.h</code></td>
+<td>possible <code>PROGMEM</code></td>
+<td>On ESP32 flash access is transparent; verify no <code>pgm_read_*</code> misuse</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-toolchain-setup">3. Toolchain Setup</h2>
+<ol>
+<li>Install the <strong>ESP32 Arduino core</strong> (via Boards Manager URL
+   <code>https://espressif.github.io/arduino-esp32/package_esp32_index.json</code>, or via
+   PlatformIO <code>platform = espressif32</code>).</li>
+<li>Select a target board (e.g. <code>ESP32 Dev Module</code> / <code>esp32dev</code>).</li>
+<li>Install required libraries:
+   - <code>ESP32Servo</code> (servo + tone replacement)
+   - Optionally <code>Preferences</code> (bundled with the core) for persistent storage.</li>
+<li>Recommended: adopt <strong>PlatformIO</strong> with a <code>env:esp32dev</code> so the AVR
+   (<code>env:uno</code>) and ESP32 builds can coexist and be validated separately.</li>
+</ol>
+<hr />
+<h2 id="4-pin-mapping-plan">4. Pin Mapping Plan</h2>
+<p>Define a single board-config header (e.g. <code>arduinolibs/Zowi/Zowi_pins.h</code> or a
+per-sketch <code>#ifdef ESP32</code> block) so pin numbers are chosen per target. Suggested
+ESP32 mapping (adjust to your wiring; avoid strapping pins 0/2/12/15 and
+input-only pins 34-39 for outputs):</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>AVR pin</th>
+<th>Suggested ESP32 GPIO</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Servo YL</td>
+<td>2</td>
+<td>13</td>
+<td>PWM-capable (LEDC)</td>
+</tr>
+<tr>
+<td>Servo YR</td>
+<td>3</td>
+<td>12</td>
+<td>avoid boot strap conflicts; verify</td>
+</tr>
+<tr>
+<td>Servo RL</td>
+<td>4</td>
+<td>14</td>
+<td></td>
+</tr>
+<tr>
+<td>Servo RR</td>
+<td>5</td>
+<td>27</td>
+<td></td>
+</tr>
+<tr>
+<td>Button 2</td>
+<td>6</td>
+<td>32</td>
+<td>input, use <code>INPUT_PULLUP</code> if needed</td>
+</tr>
+<tr>
+<td>Button 3</td>
+<td>7</td>
+<td>33</td>
+<td>input</td>
+</tr>
+<tr>
+<td>US Trigger</td>
+<td>8</td>
+<td>25</td>
+<td>output</td>
+</tr>
+<tr>
+<td>US Echo</td>
+<td>9</td>
+<td>26</td>
+<td><strong>input-only tolerant; divide 5V-&gt;3.3V</strong></td>
+</tr>
+<tr>
+<td>Buzzer</td>
+<td>10</td>
+<td>4</td>
+<td>LEDC channel</td>
+</tr>
+<tr>
+<td>LedMatrix SER</td>
+<td>11</td>
+<td>23</td>
+<td></td>
+</tr>
+<tr>
+<td>LedMatrix RCK</td>
+<td>12</td>
+<td>5</td>
+<td></td>
+</tr>
+<tr>
+<td>LedMatrix CLK</td>
+<td>13</td>
+<td>18</td>
+<td></td>
+</tr>
+<tr>
+<td>Noise sensor</td>
+<td>A6</td>
+<td>35</td>
+<td>ADC1, input-only</td>
+</tr>
+<tr>
+<td>Battery</td>
+<td>A7</td>
+<td>34</td>
+<td>ADC1, input-only, via divider</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Keep all servo and ADC pins on ADC1 (GPIO 32-39) if Wi-Fi is used, since ADC2
+conflicts with the Wi-Fi radio.</p>
+</blockquote>
+<hr />
+<h2 id="5-library-by-library-migration-steps">5. Library-by-Library Migration Steps</h2>
+<h3 id="51-oscillator-arduinolibsoscillator">5.1 Oscillator (<code>arduinolibs/Oscillator</code>)</h3>
+<ul>
+<li>Replace <code>#include &lt;Servo.h&gt;</code> with <code>#include &lt;ESP32Servo.h&gt;</code>.</li>
+<li><code>Servo _servo;</code> -&gt; <code>ESP32Servo</code> provides the same <code>attach/write/detach</code> API,
+  so <code>Oscillator.cpp</code> should compile with minimal change.</li>
+<li>In <code>attach()</code>, call <code>ESP32PWM::allocateTimer()</code> once at init (per ESP32Servo
+  docs) to reserve LEDC timers for the 4 servos.</li>
+<li>Verify <code>refresh()</code> timing still uses <code>millis()</code> (portable).</li>
+</ul>
+<h3 id="52-servo-count-ledc-channels">5.2 Servo count / LEDC channels</h3>
+<ul>
+<li>ESP32 has 16 LEDC channels; 4 servos + 1 buzzer fit easily.</li>
+<li>Ensure the buzzer tone and servos do not share a timer that causes glitches.</li>
+</ul>
+<h3 id="53-eeprom-zowicpp">5.3 EEPROM (<code>Zowi.cpp</code>)</h3>
+<ul>
+<li>Option A (minimal change): use the ESP32 <code>EEPROM</code> emulation.</li>
+<li>Add <code>EEPROM.begin(512);</code> in <code>Zowi::init()</code> before first read.</li>
+<li>After each <code>EEPROM.write(...)</code> in <code>saveTrimsOnEEPROM()</code>, call
+    <code>EEPROM.commit();</code>.</li>
+<li>Option B (recommended long-term): migrate to <code>Preferences</code> (NVS) with keys
+  for each trim and the robot name; provides wear-leveling and clearer API.</li>
+<li>Keep the EEPROM address map documented in the root <code>README.md</code> (trims at
+  0..3, name at 5+) if staying with Option A.</li>
+</ul>
+<h3 id="54-buttons-enableinterrupt-ino">5.4 Buttons / EnableInterrupt (<code>*.ino</code>)</h3>
+<ul>
+<li>Remove <code>#include &lt;EnableInterrupt.h&gt;</code>.</li>
+<li>Replace <code>enableInterrupt(pin, isr, RISING)</code> with
+  <code>attachInterrupt(digitalPinToInterrupt(pin), isr, RISING);</code>.</li>
+<li>Replace <code>disableInterrupt(pin)</code> with <code>detachInterrupt(digitalPinToInterrupt(pin));</code>.</li>
+<li>Mark ISRs with <code>IRAM_ATTR</code> and keep them short; set only <code>volatile</code> flags.</li>
+<li>Configure button pins with <code>pinMode(pin, INPUT_PULLUP)</code> (or external pulls)
+  and adjust edge (<code>FALLING</code>) to match wiring.</li>
+</ul>
+<h3 id="55-sound-tone-zowicpp_tone">5.5 Sound / tone (<code>Zowi.cpp:_tone</code>)</h3>
+<ul>
+<li>Older ESP32 cores lack <code>tone()</code>. Choose one:</li>
+<li>Use <code>ESP32Servo</code>'s <code>tone(pin, freq)</code> / <code>noTone(pin)</code> helpers, or</li>
+<li>Implement a small <code>tone()</code> wrapper using <code>ledcSetup</code>/<code>ledcWriteTone</code>
+    (ledc API) on a dedicated buzzer channel.</li>
+<li>Recent ESP32 Arduino cores (&gt;=2.0.1) do provide <code>tone()</code>/<code>noTone()</code>; if using
+  such a core, no change may be needed. Verify at build time.</li>
+</ul>
+<h3 id="56-battery-reader-batreaderhcpp">5.6 Battery reader (<code>BatReader.h/.cpp</code>)</h3>
+<ul>
+<li>Change <code>#define BAT_PIN A7</code> to the mapped GPIO (e.g. 34).</li>
+<li>Change ADC math: ESP32 ADC is 12-bit, so replace <code>/1024</code> with <code>/4095</code>.</li>
+<li>Change <code>ANA_REF 5</code> to <code>3.3</code> (or the actual divider-scaled reference), and
+  recompute the resistor divider so the max battery voltage maps under 3.3 V.</li>
+<li>Consider <code>analogSetAttenuation(ADC_11db)</code> and use ESP-IDF calibration for
+  better linearity.</li>
+</ul>
+<h3 id="57-ultrasonic-sensor-uscpp">5.7 Ultrasonic sensor (<code>US.cpp</code>)</h3>
+<ul>
+<li>Code is largely portable (<code>digitalWrite</code>, <code>delayMicroseconds</code>, <code>pulseIn</code>).</li>
+<li><strong>Hardware:</strong> the HC-SR04 Echo outputs 5 V; the ESP32 is <strong>not 5 V-tolerant</strong>.
+  Add a voltage divider or level shifter on the Echo line.</li>
+<li><code>pulseIn</code> exists on ESP32 but is less accurate; if readings are noisy,
+  reimplement using <code>pulseInLong</code> or a hardware timer / RMT.</li>
+</ul>
+<h3 id="58-led-matrix-ledmatrixcpp">5.8 LED matrix (<code>LedMatrix.cpp</code>)</h3>
+<ul>
+<li>Remap <code>SER/CLK/RCK</code> default pins (11/13/12) to the ESP32 mapping.</li>
+<li>The <code>asm volatile ("nop")</code> calls compile on Xtensa but the timing is wildly
+  different (ESP32 runs at 240 MHz vs 16 MHz). This is only a small delay for
+  the 74HC595 setup/hold; it will still work but consider replacing the manual
+  bit-bang loop with <code>shiftOut()</code> for clarity, or add explicit
+  <code>delayMicroseconds</code>-scale timing if the shift register misbehaves.</li>
+<li><code>digitalWrite</code> on ESP32 is slower than AVR, which actually helps satisfy
+  74HC595 timing.</li>
+</ul>
+<h3 id="59-zowi-core-zowicpph">5.9 Zowi core (<code>Zowi.cpp/.h</code>)</h3>
+<ul>
+<li>No structural change beyond the includes above and the EEPROM <code>begin/commit</code>.</li>
+<li>Verify <code>analogRead(pinNoiseSensor)</code> scaling in <code>getNoise()</code> (12-bit range) and
+  adjust any thresholds used in gesture/mode logic in the sketches.</li>
+<li>Verify the flash-resident tables in <code>Zowi_mouths.h</code>, <code>Zowi_sounds.h</code>,
+  <code>Zowi_gestures.h</code> do not rely on <code>PROGMEM</code> + <code>pgm_read_*</code>; on ESP32 plain
+  arrays are directly addressable, so remove any <code>pgm_read_*</code> accessors if
+  present.</li>
+</ul>
+<h3 id="510-serial-bluetooth-ino-zowiserialcommand">5.10 Serial / Bluetooth (<code>*.ino</code>, ZowiSerialCommand)</h3>
+<ul>
+<li>The original design talks to the ZowiApp over an external BT module on the
+  hardware <code>Serial</code> (115200). On ESP32 you can either:</li>
+<li>Keep using an external module on a <code>HardwareSerial</code> (e.g. <code>Serial2</code>), or</li>
+<li>Use the ESP32's built-in Bluetooth via <code>BluetoothSerial</code> and feed its stream
+    into <code>ZowiSerialCommand</code>. Ensure <code>ZowiSerialCommand</code> accepts a <code>Stream&amp;</code>
+    (refactor if it hardcodes <code>Serial</code>).</li>
+</ul>
+<hr />
+<h2 id="6-sketch-level-changes">6. Sketch-Level Changes</h2>
+<p>For each <code>.ino</code>:
+1. Add a target guard block, e.g.:
+   <code>cpp
+   #if defined(ESP32)
+     #define PIN_YL 13
+     // ... ESP32 pins
+   #else
+     #define PIN_YL 2
+     // ... AVR pins
+   #endif</code>
+2. Swap the interrupt include/API as in 5.4.
+3. Confirm <code>Serial.begin(115200)</code> and (optionally) <code>BluetoothSerial</code> init.
+4. Rebuild and address compiler errors iteratively.</p>
+<p>Recommended file order: <code>factoryZowi.ino</code> (calibration/hardware bring-up) -&gt;
+<code>ZOWI_BASE_v2.ino</code> -&gt; the two games.</p>
+<hr />
+<h2 id="7-validation-plan">7. Validation Plan</h2>
+<ol>
+<li><strong>Build</strong>: compile each sketch for <code>esp32dev</code> with no errors/warnings.</li>
+<li><strong>Bring-up (factoryZowi)</strong>: verify each subsystem individually:
+   - Servos sweep and center correctly (trim calibration).
+   - LED matrix displays known mouths.
+   - Buzzer plays tones at correct pitch.
+   - US sensor returns plausible distances (with level shifting).
+   - Battery and noise ADC readings are in expected ranges after rescaling.
+   - Both buttons trigger their ISRs.</li>
+<li><strong>Persistence</strong>: set trims, power-cycle, confirm they reload from EEPROM/NVS.</li>
+<li><strong>Integration (ZOWI_BASE)</strong>: run the 3 standalone mini-games (A, B, A+B).</li>
+<li><strong>Comms</strong>: verify command parsing over the chosen BT transport with ZowiApp
+   or a serial terminal.</li>
+<li>Regression: keep the AVR build working (dual-target) to avoid breaking bq Zum.</li>
+</ol>
+<hr />
+<h2 id="8-risks-and-open-questions">8. Risks and Open Questions</h2>
+<ul>
+<li><strong>5 V vs 3.3 V</strong>: every peripheral line (Echo, buttons, LED matrix, servo
+  signal, sensors) must be checked; servos are usually fine with 3.3 V logic but
+  need adequate current on their power rail.</li>
+<li><strong>ADC2 vs Wi-Fi</strong>: if Wi-Fi is enabled, keep all analog inputs on ADC1.</li>
+<li><strong>tone()/Servo timer sharing</strong>: LEDC channel/timer allocation conflicts.</li>
+<li><strong>BT stack size</strong>: enabling <code>BluetoothSerial</code> increases flash/RAM usage and
+  affects partition scheme.</li>
+<li><strong>pulseIn accuracy</strong>: may need RMT-based ultrasonic driver.</li>
+</ul>
+<hr />
+<h2 id="9-suggested-milestones">9. Suggested Milestones</h2>
+<ol>
+<li>Toolchain + dual-target build skeleton (PlatformIO envs).</li>
+<li>Oscillator/Servo port + servo bring-up.</li>
+<li>EEPROM/Preferences persistence.</li>
+<li>Buttons/interrupts + LED matrix + buzzer.</li>
+<li>Sensors (US + battery + noise) with rescaling and level shifting.</li>
+<li>Full <code>ZOWI_BASE</code> standalone modes passing.</li>
+<li>Bluetooth comms with ZowiApp.</li>
+<li>Port the two games and final regression.</li>
+</ol>
+  </div>
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zowi vs Otto vs ESP32 — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-api.html">Zowi API Reference</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+      <div class="nav-section">Project Planning</div>
+      <a href="migrate-esp32.html">Migrate to ESP32</a>
+      <a href="zowi-vs-otto-esp32.html" class="active">Zowi vs Otto vs ESP32</a>
+      <a href="zowi-vs-otto-libs.html">Zowi vs Otto Libs</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+<h1 id="zowi-vs-otto-vs-esp32-plan-to-make-zowi-an-otto-compatible-esp32-robot">Zowi vs Otto vs ESP32: Plan to Make Zowi an Otto-Compatible ESP32 Robot</h1>
+<p>This document is a <strong>planning document only</strong>. It describes the strategy to
+convert a Zowi robot (originally built on the <strong>bq Zum</strong> board, an Arduino
+UNO-compatible board based on the 8-bit <strong>ATmega328P</strong>) into an <strong>Otto-compatible
+robot running on an ESP32</strong>, reusing the original Zowi body.</p>
+<blockquote>
+<p>No development is started by this document. It records goals, findings,
+architecture and milestones so implementation can begin later.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#0-investigation-findings-baseline">0. Investigation Findings (baseline)</a></li>
+<li><a href="#01-ecosystem-compatibility-matrix-avr-vs-esp32">0.1 Ecosystem Compatibility Matrix (AVR vs ESP32)</a></li>
+<li><a href="#1-goals--scope-confirmed">1. Goals &amp; Scope (confirmed)</a></li>
+<li><a href="#2-target-architecture-layered-dual-stack">2. Target Architecture (layered, dual-stack)</a></li>
+<li><a href="#3-prerequisite-esp32-port-of-the-zowi-core">3. Prerequisite: ESP32 Port of the Zowi Core</a></li>
+<li><a href="#4-multi-board-support-esp32-devkit--arduino-nano-esp32">4. Multi-Board Support (ESP32 DevKit + Arduino Nano ESP32)</a></li>
+<li><a href="#41-proposed-pin-maps-to-be-finalized-during-implementation">4.1 Proposed pin maps (to be finalized during implementation)</a></li>
+<li><a href="#5-otto-compatibility-layer">5. Otto-Compatibility Layer</a></li>
+<li><a href="#6-dual-protocol--app-support">6. Dual Protocol / App Support</a></li>
+<li><a href="#7-modular-hp-robots-accessories-total-scope">7. Modular HP Robots Accessories (total scope)</a></li>
+<li><a href="#8-deliverables-when-implementation-starts">8. Deliverables (when implementation starts)</a></li>
+<li><a href="#9-validation-plan">9. Validation Plan</a></li>
+<li><a href="#10-milestones">10. Milestones</a></li>
+<li><a href="#11-risks--open-questions">11. Risks &amp; Open Questions</a></li>
+<li><a href="#12-references">12. References</a></li>
+</ul>
+<hr />
+<h2 id="0-investigation-findings-baseline">0. Investigation Findings (baseline)</h2>
+<ul>
+<li><strong>hprobots.com is ESP32-based.</strong> HP Robots is the official commercial
+  evolution of the open-source Otto DIY project. Its current platform (the
+  "Ottoky" IoT robot, the web-blocks coding editor, and the Creator kits) runs
+  on <strong>ESP32</strong> with WiFi + BLE. Their contest/docs explicitly state advanced
+  users can use "any <strong>ESP32-compatible coding platform</strong>, including Thonny IDE
+  for MicroPython or the Arduino IDE".</li>
+<li><strong>Otto DIY has had ESP32 support since 2019</strong> (<code>OttoDIY/DIY/Otto_ESP32</code>), and
+  the official <code>OttoDIYLib</code> lists <strong>ESP32</strong> among compatible hardware. Community
+  ports exist (e.g. <code>rhansenne/OttoDIY_ESP32</code>) featuring native BLE app control,
+  OTA updates, and multiple interaction modes.</li>
+<li><strong>Zowi and Otto share a common ancestry.</strong> Both use the Obijuan
+  <code>Oscillator.h</code> servo algorithm and the same <strong>4-servo biped</strong> architecture.
+  Their public APIs are almost identical:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Zowi</th>
+<th>Otto</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Init</td>
+<td><code>zowi.init(YL,YR,RL,RR,cal,...)</code></td>
+<td><code>Otto.init(LeftLeg,RightLeg,LeftFoot,RightFoot,cal,Buzzer)</code></td>
+</tr>
+<tr>
+<td>Movements</td>
+<td><code>walk/turn/jump/bend/shakeLeg</code></td>
+<td>identical</td>
+</tr>
+<tr>
+<td>Dances</td>
+<td><code>moonwalker/crusaito/flapping/swing/tiptoeSwing/jitter/updown/ascendingTurn</code></td>
+<td>identical</td>
+</tr>
+<tr>
+<td>Sounds</td>
+<td><code>sing()</code>, <code>_tone()</code>, <code>bendTones()</code></td>
+<td>identical</td>
+</tr>
+<tr>
+<td>Gestures</td>
+<td><code>playGesture(int)</code></td>
+<td><code>playGesture(OttoHappy...)</code></td>
+</tr>
+<tr>
+<td>Oscillator</td>
+<td>Obijuan <code>Oscillator</code></td>
+<td>Obijuan <code>Oscillator</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Zowi-specific differences to reconcile:</strong></li>
+<li><strong>Mouth:</strong> Zowi uses a <strong>5×6 LED matrix driven by a 74HC595 shift register</strong>
+    (<code>LedMatrix</code> lib, pins SER/CLK/RCK). Otto typically uses an <strong>8×8 matrix with
+    a MAX7219</strong>.</li>
+<li><strong>App protocol:</strong> Zowi uses a <strong>proprietary ZowiApp serial protocol</strong> with
+    single-letter commands (<code>S,L,T,M,H,K,C,G,R,E,D,N,B,I</code>) framed as <code>&amp;&amp;...%%</code>,
+    parsed by <code>ZowiSerialCommand</code>. Otto uses its own Bluetooth command set.</li>
+</ul>
+<hr />
+<h2 id="01-ecosystem-compatibility-matrix-avr-vs-esp32">0.1 Ecosystem Compatibility Matrix (AVR vs ESP32)</h2>
+<p>A common source of confusion is treating "Otto / HP Robots" as a single thing.
+It is actually <strong>three distinct layers</strong>, and board support differs per layer.
+This is important because it determines what a converted Zowi can and cannot do
+on a given microcontroller.</p>
+<h3 id="the-three-layers">The three layers</h3>
+<ol>
+<li><strong>Otto DIY open-source library &amp; desktop tools</strong> — the classic maker path.</li>
+<li><strong>Otto Blockly (desktop app)</strong> — offline visual programming, open source.</li>
+<li><strong>HP Robots commercial ecosystem (hprobots.com)</strong> — the new "HP Otto"
+   product: web-blocks editor, mobile app, MicroPython, WiFi/IoT/AI, RGB, and
+   modular expansions.</li>
+</ol>
+<h3 id="compatibility-per-layer">Compatibility per layer</h3>
+<table>
+<thead>
+<tr>
+<th>Layer / feature</th>
+<th>Arduino UNO / Nano (ATmega328)</th>
+<th>ESP32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OttoDIYLib</code> (Arduino IDE)</td>
+<td>✅ Supported (avr)</td>
+<td>✅ Supported (esp32)</td>
+</tr>
+<tr>
+<td>Otto Blockly desktop (board selector: Nano, Uno, Leonardo, Micro, Mega, ZUM BT-328, Nano Every, MKR WiFi, ESP8266/ESP32)</td>
+<td>✅ Supported</td>
+<td>✅ Supported</td>
+</tr>
+<tr>
+<td>HP Robots <strong>web</strong> code editor (hprobots.com/otto-robot/code)</td>
+<td>❌ Not supported</td>
+<td>✅ ESP32-only</td>
+</tr>
+<tr>
+<td>HP Robots <strong>mobile app</strong> + Bluetooth control</td>
+<td>❌ Not possible on classic AVR</td>
+<td>✅ Native BLE</td>
+</tr>
+<tr>
+<td><strong>MicroPython</strong> (Thonny)</td>
+<td>❌ Not supported</td>
+<td>✅ Supported</td>
+</tr>
+<tr>
+<td><strong>WiFi / IoT / AI / cloud</strong></td>
+<td>❌ No radio on ATmega328</td>
+<td>✅ Built-in</td>
+</tr>
+<tr>
+<td>RGB / modular &gt;10 expansions</td>
+<td>⚠️ Limited by pins/memory</td>
+<td>✅ Designed for it</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-finding">Key finding</h3>
+<ul>
+<li><strong>The open-source Otto DIY project still fully supports Arduino UNO and Nano</strong>
+  (via <code>OttoDIYLib</code> — architectures <code>avr</code>, <code>esp8266</code>, <code>esp32</code> — and the desktop
+  Otto Blockly board selector).</li>
+<li><strong>The current HP Robots commercial ecosystem (hprobots.com) is ESP32-only.</strong>
+  Its differentiating features (mobile app + Bluetooth, web-blocks editor,
+  MicroPython, WiFi/IoT/AI, rich modularity) are physically impossible on a
+  classic ATmega328 (no radio, limited flash/RAM). Otto DIY's own site frames
+  this as two paths: <em>"Otto DIY"</em> (Arduino IDE only, <strong>no</strong> Bluetooth/App) vs
+  <em>"HP Otto"</em> (Arduino IDE <strong>and</strong> MicroPython, Bluetooth + App + WiFi).</li>
+<li>So HP Robots did <strong>not</strong> port its full cloud/app stack down to AVR; it
+  <strong>adopted the open-source Otto project and built an ESP32-based premium layer
+  on top</strong>.</li>
+</ul>
+<h3 id="implication-for-the-zowi-otto-conversion">Implication for the Zowi → Otto conversion</h3>
+<p>This <strong>reinforces the ESP32 decision</strong>:</p>
+<ul>
+<li>Targeting <strong>UNO/Nano</strong> would only give compatibility at the <strong>library / desktop
+  Blockly</strong> level — never with the HP Robots app, web editor, or IoT ecosystem.</li>
+<li>Achieving the project's <strong>"total ecosystem" goal</strong> (code + app + web blocks +
+  modules) <strong>requires ESP32</strong>. AVR is therefore a non-goal for this project,
+  except as an optional secondary build target for the pure motion API.</li>
+</ul>
+<hr />
+<h2 id="1-goals-scope-confirmed">1. Goals &amp; Scope (confirmed)</h2>
+<ul>
+<li><strong>Full dual compatibility:</strong> keep the original <strong>ZowiApp protocol</strong> working
+  <strong>and</strong> expose the <strong>Otto API + Otto app/BLE</strong> control.</li>
+<li><strong>Total ecosystem target:</strong> code API + app/blocks control + modular HP Robots
+  accessories.</li>
+<li><strong>Hardware:</strong> reuse the <strong>original Zowi body</strong> (4 servos, HC-SR04 ultrasonic
+  sensor, 74HC595 5×6 mouth, buzzer, noise sensor, battery divider, 2 buttons)
+  with a <strong>new ESP32 board</strong> replacing the bq Zum.</li>
+<li><strong>Board support:</strong> the design must support <strong>both</strong>:</li>
+<li><strong>ESP32 DevKit</strong> (38-pin / 30-pin WROOM dev board), and</li>
+<li><strong>Arduino Nano ESP32</strong> (drop-in on standard Nano shields / Otto-style I/O).</li>
+</ul>
+<p>Out of scope for now: writing production code. This is planning only.</p>
+<hr />
+<h2 id="2-target-architecture-layered-dual-stack">2. Target Architecture (layered, dual-stack)</h2>
+<pre><code>+-------------------------------------------------------------+
+|  Sketches: ZowiApp-compat sketch  |  Otto-compat sketch     |
++-------------------------------------------------------------+
+|  Protocol layer:  ZowiSerialCommand  |  Otto app/BLE cmds    |
++-------------------------------------------------------------+
+|  Unified motion API  (Zowi API  &lt;-&gt;  Otto API alias shim)   |
++-------------------------------------------------------------+
+|  HAL (ESP32): ESP32Servo | LEDC tone | EEPROM/NVS | ADC12 |  |
+|               74HC595 mouth driver | US | interrupts        |
++-------------------------------------------------------------+
+|  Board config: multi-board pin map (DevKit + Nano ESP32)    |
++-------------------------------------------------------------+
+</code></pre>
+<p>Key idea: <strong>one shared motion/oscillator core</strong> for the Zowi body, with <strong>two
+thin API facades</strong> (<code>Zowi.*</code> and <code>Otto.*</code>) and <strong>two protocol front-ends</strong>
+(ZowiApp serial + Otto BLE/app), all on a <strong>board-agnostic HAL</strong> that supports
+both ESP32 DevKit and Arduino Nano ESP32.</p>
+<hr />
+<h2 id="3-prerequisite-esp32-port-of-the-zowi-core">3. Prerequisite: ESP32 Port of the Zowi Core</h2>
+<p>This depends on the companion document <code>docs/project/MIGRATE_ESP32.md</code>. Execute
+that migration first. Summary of required changes:</p>
+<ul>
+<li><code>&lt;Servo.h&gt;</code> → <strong>ESP32Servo</strong> (LEDC PWM), allocate LEDC timers for 4 (+ arms)
+  servos.</li>
+<li><code>&lt;EEPROM.h&gt;</code> → ESP32 EEPROM emulation (<code>begin</code>/<code>commit</code>) or <strong>Preferences</strong>
+  (NVS) for trims + robot name.</li>
+<li><code>&lt;EnableInterrupt.h&gt;</code> → core <code>attachInterrupt(digitalPinToInterrupt(...))</code>
+  with <code>IRAM_ATTR</code> ISRs.</li>
+<li><code>tone()</code>/<code>noTone()</code> → LEDC tone (or core <code>tone()</code> on recent ESP32 Arduino
+  cores) for the buzzer.</li>
+<li>ADC rescale: 10-bit/5V (AVR) → <strong>12-bit/3.3V</strong> (ESP32) for noise + battery;
+  recompute battery divider.</li>
+<li>HC-SR04 Echo is 5V → <strong>level shift / voltage divider</strong> to 3.3V.</li>
+<li>74HC595 mouth: remap SER/CLK/RCK pins; the <code>asm nop</code> timing still works but
+  consider <code>shiftOut()</code>.</li>
+</ul>
+<p>This is <strong>Milestone A</strong>.</p>
+<hr />
+<h2 id="4-multi-board-support-esp32-devkit-arduino-nano-esp32">4. Multi-Board Support (ESP32 DevKit + Arduino Nano ESP32)</h2>
+<p>Provide a single board-config header that selects the pin map at compile time
+based on the Arduino target macro, so the same firmware builds for both boards.</p>
+<pre><code>#if defined(ARDUINO_NANO_ESP32)
+    // Arduino Nano ESP32 pin map (drop-in on Nano/Otto shields)
+#elif defined(ARDUINO_ESP32_DEV) || defined(CONFIG_IDF_TARGET_ESP32)
+    // ESP32 DevKit (WROOM) pin map
+#else
+    #error &quot;Unsupported board: add a pin map&quot;
+#endif
+</code></pre>
+<p>Guidelines that apply to <strong>both</strong> boards:
+- Keep all analog inputs (noise, battery) on <strong>ADC1</strong> (safe with WiFi/BLE on).
+- Avoid boot-strapping pins for critical outputs where possible.
+- Servo signal pins must be LEDC/PWM-capable.</p>
+<h3 id="41-proposed-pin-maps-to-be-finalized-during-implementation">4.1 Proposed pin maps (to be finalized during implementation)</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>AVR (bq Zum)</th>
+<th>ESP32 DevKit (suggested)</th>
+<th>Arduino Nano ESP32 (suggested)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Servo YL / LeftLeg</td>
+<td>2</td>
+<td>13</td>
+<td>D2</td>
+</tr>
+<tr>
+<td>Servo YR / RightLeg</td>
+<td>3</td>
+<td>12</td>
+<td>D3</td>
+</tr>
+<tr>
+<td>Servo RL / LeftFoot</td>
+<td>4</td>
+<td>14</td>
+<td>D4</td>
+</tr>
+<tr>
+<td>Servo RR / RightFoot</td>
+<td>5</td>
+<td>27</td>
+<td>D5</td>
+</tr>
+<tr>
+<td>Button A</td>
+<td>6</td>
+<td>32</td>
+<td>D6</td>
+</tr>
+<tr>
+<td>Button B</td>
+<td>7</td>
+<td>33</td>
+<td>D7</td>
+</tr>
+<tr>
+<td>US Trigger</td>
+<td>8</td>
+<td>25</td>
+<td>D8</td>
+</tr>
+<tr>
+<td>US Echo (÷ to 3.3V)</td>
+<td>9</td>
+<td>26</td>
+<td>D9</td>
+</tr>
+<tr>
+<td>Buzzer</td>
+<td>10</td>
+<td>4</td>
+<td>D13 (Otto default)</td>
+</tr>
+<tr>
+<td>Mouth SER</td>
+<td>11</td>
+<td>23</td>
+<td>D11</td>
+</tr>
+<tr>
+<td>Mouth RCK</td>
+<td>12</td>
+<td>5</td>
+<td>D12</td>
+</tr>
+<tr>
+<td>Mouth CLK</td>
+<td>13</td>
+<td>18</td>
+<td>D10</td>
+</tr>
+<tr>
+<td>Noise sensor</td>
+<td>A6</td>
+<td>35 (ADC1)</td>
+<td>A6</td>
+</tr>
+<tr>
+<td>Battery</td>
+<td>A7</td>
+<td>34 (ADC1)</td>
+<td>A7</td>
+</tr>
+<tr>
+<td>(Optional) Arm L/R</td>
+<td>–</td>
+<td>spare LEDC pins</td>
+<td>spare D pins</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>The Nano ESP32 mapping aims to stay compatible with standard Nano/Otto I/O
+shields; the DevKit mapping targets a bare WROOM dev board on a breadboard/PCB.</p>
+</blockquote>
+<hr />
+<h2 id="5-otto-compatibility-layer">5. Otto-Compatibility Layer</h2>
+<ul>
+<li><strong>Reference <code>OttoDIYLib</code></strong> for exact signatures and gesture/sound enums; map
+  them onto the ported Zowi core (do not blindly fork).</li>
+<li><strong><code>Otto</code> facade class</strong> (e.g. <code>arduinolibs/OttoCompat/Otto.h</code>):</li>
+<li>Otto-style <code>init(LeftLeg,RightLeg,LeftFoot,RightFoot,cal,Buzzer)</code> delegating
+    to the Zowi motion core.</li>
+<li>Alias all movement/dance methods (already 1:1 with Zowi).</li>
+<li>Map Otto <strong>gesture enums</strong> (<code>OttoHappy, OttoSad, OttoVictory, OttoAngry,
+    OttoSleeping, OttoFretful, OttoLove, OttoConfused, OttoFart, OttoWave,
+    OttoMagic, OttoFail, OttoSuperHappy</code>) to Zowi integer <code>playGesture()</code> cases
+    via a lookup table; <strong>document gaps</strong> where sets differ.</li>
+<li>Map Otto <strong>sound enums</strong> (<code>S_connection ... S_fart3</code>) to Zowi <code>sing()</code>
+    indices.</li>
+<li><strong>Servo index reconciliation:</strong> unify Zowi <code>{YL,YR,RL,RR}</code> with Otto
+  <code>{LeftLeg,RightLeg,LeftFoot,RightFoot}</code> in one place.</li>
+<li><strong>Mouth abstraction (<code>IMouth</code> interface):</strong></li>
+<li><code>Mouth74HC595</code> — Zowi 5×6 backend (existing <code>LedMatrix</code>).</li>
+<li><code>MouthMAX7219</code> — optional Otto 8×8 backend (only if Otto electronics are
+    later fitted).</li>
+<li>Provide best-effort <strong>8×8 → 5×6 bitmap mapping</strong> so Otto mouth animations
+    still render on the Zowi mouth (approximated).</li>
+</ul>
+<hr />
+<h2 id="6-dual-protocol-app-support">6. Dual Protocol / App Support</h2>
+<ul>
+<li><strong>Keep ZowiApp protocol:</strong> port <code>ZowiSerialCommand</code> to ESP32 (plain C++,
+  mostly portable) and preserve the <code>&amp;&amp;...%%</code> framing + single-letter handlers so
+  the original ZowiApp keeps working over BLE-serial.</li>
+<li><strong>Add Otto app / BLE:</strong> implement Otto's Bluetooth command set using the
+  ESP32's <strong>native BLE / BluetoothSerial</strong> (no external HC-06 module needed).
+  Use <code>OttoDIY</code> app protocol and <code>rhansenne/OttoDIY_ESP32</code> (BLE app + modes) as
+  references.</li>
+<li><strong>Runtime/compile selection:</strong> a flag
+  (<code>PROTOCOL_ZOWI</code> / <code>PROTOCOL_OTTO</code> / <code>PROTOCOL_BOTH</code>) and/or a boot-time mode
+  (button combo) to choose the active stack and avoid transport contention.</li>
+<li><strong>HP Robots web-blocks / MicroPython:</strong> document how to flash the ESP32 on both
+  boards; note HP Robots' block editor targets ESP32. Treat <strong>full block-editor
+  integration as a stretch goal</strong> (may require their firmware/handshake —
+  investigate separately).</li>
+</ul>
+<hr />
+<h2 id="7-modular-hp-robots-accessories-total-scope">7. Modular HP Robots Accessories (total scope)</h2>
+<ul>
+<li>Reserve spare ESP32 GPIOs and an <strong>I²C / Grove-style header</strong> for HP
+  Robots-style expansions (arms, extra sensors).</li>
+<li>Exploit the ESP32's extra PWM channels/memory to expose optional <strong>arm
+  servos</strong> behind the facade (Otto ESP32 supports arms).</li>
+<li>Maintain a <strong>pin-budget table</strong> per board reserving pins for future modules;
+  keep analog on ADC1 when WiFi/BLE is active.</li>
+</ul>
+<hr />
+<h2 id="8-deliverables-when-implementation-starts">8. Deliverables (when implementation starts)</h2>
+<ul>
+<li><code>docs/project/ZOWI_VS_OTTO_VS_ESP32.md</code> — this plan (persisted).</li>
+<li><code>arduinolibs/OttoCompat/</code> — <code>Otto.h/.cpp</code> facade + gesture/sound/mouth maps.</li>
+<li><code>arduinolibs/ZowiHAL/Zowi_pins_esp32.h</code> — multi-board pin config
+  (DevKit + Nano ESP32).</li>
+<li>Mouth driver abstraction (<code>IMouth</code>, <code>Mouth74HC595</code>, optional <code>MouthMAX7219</code>).</li>
+<li>Example sketches: <code>examples/ZowiOtto_esp32/</code> (Otto API), a ZowiApp-compat
+  sketch, and a <code>BOTH</code> demo.</li>
+<li>Wiring/README updates for the ESP32↔Zowi-body harness and level-shifting, for
+  both boards.</li>
+</ul>
+<hr />
+<h2 id="9-validation-plan">9. Validation Plan</h2>
+<ol>
+<li><strong>Core bring-up (Milestone A):</strong> servos, 74HC595 mouth, buzzer, US, ADC,
+   buttons on ESP32 — verified on <strong>both</strong> DevKit and Nano ESP32.</li>
+<li><strong>Otto API:</strong> compile &amp; run selected <code>OttoDIYLib</code> examples (<code>Otto_allmoves</code>,
+   <code>Otto_avoid</code>, <code>Otto_APP</code>) against the facade.</li>
+<li><strong>Zowi protocol regression:</strong> original ZowiApp connects and drives via
+   <code>&amp;&amp;...%%</code>.</li>
+<li><strong>Otto app:</strong> Otto BLE app connects and controls modes.</li>
+<li><strong>Dual mode:</strong> switch stacks at boot with no transport contention.</li>
+<li><strong>Persistence:</strong> trims survive power-cycle (EEPROM/NVS).</li>
+<li><strong>Accessory smoke test:</strong> attach one extra servo/sensor via the reserved
+   header.</li>
+</ol>
+<hr />
+<h2 id="10-milestones">10. Milestones</h2>
+<ul>
+<li><strong>A.</strong> ESP32 port of the Zowi core (per <code>MIGRATE_ESP32.md</code>), building for both
+  boards.</li>
+<li><strong>B.</strong> Otto facade + gesture/sound/mouth mapping; Otto examples pass.</li>
+<li><strong>C.</strong> Mouth abstraction (74HC595 ⇄ optional MAX7219).</li>
+<li><strong>D.</strong> Dual protocol: ported ZowiApp + Otto BLE app.</li>
+<li><strong>E.</strong> Modular accessory support + per-board pin budget.</li>
+<li><strong>F.</strong> Docs, wiring, and stretch: HP Robots web-blocks / MicroPython.</li>
+</ul>
+<hr />
+<h2 id="11-risks-open-questions">11. Risks &amp; Open Questions</h2>
+<ul>
+<li><strong>Transport contention</strong> between ZowiApp serial and Otto BLE → needs mode
+  switching.</li>
+<li><strong>Mouth resolution mismatch</strong> (5×6 vs 8×8) → some Otto faces render
+  approximated.</li>
+<li><strong>Gesture/sound set differences</strong> → a few Otto gestures may be unmapped
+  (document).</li>
+<li><strong>HP Robots block editor</strong> may require proprietary firmware/handshake →
+  confirm feasibility before committing to full block compatibility.</li>
+<li><strong>3.3 V vs 5 V</strong> on US Echo, buttons, 74HC595, noise/battery ADC → hardware
+  adaptation required.</li>
+<li><strong>Board differences:</strong> ESP32 DevKit (bare WROOM) vs Arduino Nano ESP32
+  (Nano-shield friendly) differ in pin availability, USB flashing behavior, and
+  power; the pin maps and wiring docs must cover both.</li>
+</ul>
+<hr />
+<h2 id="12-references">12. References</h2>
+<ul>
+<li>Otto DIY libraries: <code>github.com/OttoDIY/OttoDIYLib</code></li>
+<li>Otto ESP32 sketch: <code>github.com/OttoDIY/DIY/tree/master/Otto_ESP32</code></li>
+<li>Community ESP32 BLE port: <code>github.com/rhansenne/OttoDIY_ESP32</code></li>
+<li>ESP32Servo: <code>github.com/madhephaestus/ESP32Servo</code></li>
+<li>HP Robots platform: <code>hprobots.com</code></li>
+<li>Companion migration plan: <code>docs/project/MIGRATE_ESP32.md</code></li>
+</ul>
+  </div>
+</body>
+</html>

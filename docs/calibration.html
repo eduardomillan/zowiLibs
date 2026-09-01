@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calibration — Zowi Documentation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Zowi</h1>
+    <p class="subtitle">Open Robot Platform</p>
+    <nav>
+      <div class="nav-section">Documentation</div>
+      <a href="index.html">Home</a>
+      <a href="zowi-base.html">ZOWI BASE</a>
+      <a href="zowi-api.html">Zowi API Reference</a>
+      <a href="zowi-adivinawi.html">ZOWI Adivinawi</a>
+      <a href="zowi-alarm.html">ZOWI Alarm</a>
+      <a href="factory-zowi.html">Factory Zowi</a>
+      <a href="arduino-libs.html">Arduino Libraries</a>
+      <a href="calibration.html" class="active">Calibration</a>
+      <div class="nav-section">Project Planning</div>
+      <a href="migrate-esp32.html">Migrate to ESP32</a>
+      <a href="zowi-vs-otto-esp32.html">Zowi vs Otto vs ESP32</a>
+      <a href="zowi-vs-otto-libs.html">Zowi vs Otto Libs</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <h1>Zowi Calibration</h1>
+
+    <h2>Theoretical Operation</h2>
+    <p>Calibration compensates for the mechanical misalignment of the 4 servos (servo horns not perfectly centered). Each servo receives a signed integer <strong>trim offset</strong> (in degrees) that is added to every commanded angle.</p>
+    <p>The workflow is:</p>
+    <ol>
+      <li>Use the <strong><code>G</code></strong> command to position servos at known positions (e.g. 90°) and observe where they physically rest.</li>
+      <li>Compute the difference between the commanded and actual angle → that difference is the trim for that joint.</li>
+      <li>Send the <strong><code>C</code></strong> command with all 4 trims → they are applied immediately and saved to EEPROM.</li>
+      <li>On every subsequent boot, the trims are reloaded automatically.</li>
+    </ol>
+
+    <h2>Architecture by Layer</h2>
+    <table>
+      <tr><th>Layer</th><th>Files</th><th>Role</th></tr>
+      <tr><td><strong>Hardware</strong></td><td>bq Zum (ATmega328P), servos on pins 2,3,4,5</td><td>4 servos: YL(2), YR(3), RL(4), RR(5)</td></tr>
+      <tr><td><strong>Persistence</strong></td><td>EEPROM[0..3]</td><td>Stores trims as signed bytes (2's complement)</td></tr>
+      <tr><td><strong>Motion Engine</strong></td><td><code>Oscillator.cpp</code> / <code>Oscillator.h</code></td><td>Applies <code>_trim</code> in <code>SetPosition()</code> and <code>refresh()</code></td></tr>
+      <tr><td><strong>Robot API</strong></td><td><code>Zowi.cpp</code> / <code>Zowi.h</code></td><td><code>init()</code>, <code>setTrims()</code>, <code>saveTrimsOnEEPROM()</code></td></tr>
+      <tr><td><strong>Serial Protocol</strong></td><td><code>ZowiSerialCommand.cpp/.h</code></td><td>Parses <code>&amp;&amp;CMD args%%</code> frames</td></tr>
+      <tr><td><strong>Application</strong></td><td><code>ZOWI_BASE_v2.ino</code>, <code>factoryZowi.ino</code></td><td>Registers <code>C</code>/<code>G</code> commands, orchestrates calibration</td></tr>
+    </table>
+
+    <h2>Key Files</h2>
+    <h3>Core implementation</h3>
+    <ul>
+      <li><code>arduinolibs/Zowi/Zowi.h</code> / <code>.cpp</code> — Declares/implements <code>init()</code>, <code>setTrims()</code>, <code>saveTrimsOnEEPROM()</code></li>
+      <li><code>arduinolibs/Oscillator/Oscillator.h</code> / <code>.cpp</code> — Where the trim is <strong>applied</strong>: <code>_servo.write(position + _trim)</code></li>
+      <li><code>arduinolibs/ZowiSerialCommand/ZowiSerialCommand.cpp</code> — Serial command parser</li>
+    </ul>
+    <h3>Firmware</h3>
+    <ul>
+      <li><code>code/base/ZOWI_BASE_v2.ino</code> — Main firmware, registers <code>C</code> and <code>G</code> commands</li>
+      <li><code>code/factoryZowi/factoryZowi.ino</code> — Factory calibration (trims to 0, verification sweep)</li>
+    </ul>
+    <h3>Documentation</h3>
+    <ul>
+      <li><code>docs/project/ZOWI_API.md</code> (§Calibration Trims)</li>
+      <li><code>docs/project/ZOWI_BASE.md</code> (serial command table)</li>
+      <li><code>docs/project/FACTORY_ZOWI.md</code> (factory procedure)</li>
+    </ul>
+
+    <h2>Serial Commands</h2>
+    <table>
+      <tr><th>Command</th><th>Function</th><th>Example</th></tr>
+      <tr><td><code>C &lt;YL&gt; &lt;YR&gt; &lt;RL&gt; &lt;RR&gt;</code></td><td>Sets and saves the 4 trims</td><td><code>C 20 0 -8 3</code></td></tr>
+      <tr><td><code>G &lt;YL&gt; &lt;YR&gt; &lt;RL&gt; &lt;RR&gt;</code></td><td>Positions raw servos (for observation)</td><td><code>G 90 85 96 78</code></td></tr>
+    </table>
+    <p>Protocol: <code>&amp;&amp;CMD args%%</code>, baud rate 115200, terminated by <code>\r</code>.</p>
+
+    <h2>Leg vs Foot Example</h2>
+    <p>There are no separate commands — the distinction is by argument position:</p>
+    <table>
+      <tr><th>Servo</th><th>Physical role</th><th>Trim arg</th><th>EEPROM</th><th>Trim example</th></tr>
+      <tr><td><strong>YL</strong></td><td>Left leg (hip)</td><td>1st</td><td>[0]</td><td><code>C 20 ...</code> → +20°</td></tr>
+      <tr><td><strong>YR</strong></td><td>Right leg (hip)</td><td>2nd</td><td>[1]</td><td><code>C ... 0 ...</code> → no adjustment</td></tr>
+      <tr><td><strong>RL</strong></td><td>Left foot</td><td>3rd</td><td>[2]</td><td><code>C ... -8 ...</code> → -8°</td></tr>
+      <tr><td><strong>RR</strong></td><td>Right foot</td><td>4th</td><td>[3]</td><td><code>C ... 3</code> → +3°</td></tr>
+    </table>
+    <p><strong>Leg example:</strong> If the left leg rests tilted 20° to the left in the neutral position, send <code>C 20 ...</code>. The trim is added in <code>Oscillator.cpp:97</code> (<code>_servo.write(position + _trim)</code>).</p>
+    <p><strong>Foot example:</strong> If the right foot is not flat, adjust the 4th argument: <code>C ... 3</code>. The trim applies both to absolute movements and to sinusoidal oscillation (<code>Oscillator.cpp:117</code>).</p>
+
+    <h2>EEPROM Storage</h2>
+    <pre><code>EEPROM[0] = TRIM_YL (left leg)     — signed byte
+EEPROM[1] = TRIM_YR (right leg)    — signed byte
+EEPROM[2] = TRIM_RL (left foot)    — signed byte
+EEPROM[3] = TRIM_RR (right foot)   — signed byte
+EEPROM[4] = free
+EEPROM[5-15] = name / factory marker</code></pre>
+    <p>Read in <code>init()</code> with decode: <code>if (val &gt; 128) val -= 256</code> (range ±127°).</p>
+
+    <h2>Note</h2>
+    <p>There are no Python scripts or external configuration files — it is all Arduino C/C++. The only calibration tools are the <code>C</code>/<code>G</code> serial commands.</p>
+  </div>
+</body>
+</html>

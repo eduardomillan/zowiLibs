@@ -2,7 +2,7 @@
 
 The default firmware for Zowi. Developed by BQ (Anita de Prado, Jose Alberca, Javier Isabel, Juan Gonzalez, Irene Sanz, December 2015). Released under GPL.
 
-This document is the unified reference for `code/base/ZOWI_BASE_v2.ino` and its supporting libraries. It consolidates and supersedes the former `ZOWI_BASE_BLOCKS.md` and `ZOWI_BASE_BLOCKS_MERMAID.md`. All IDs and behaviors described here were verified against the source code.
+This document is the unified reference for `code/base/ZOWI_BASE_v2.ino` and its supporting libraries. All IDs and behaviors described here were verified against the source code.
 
 ## Contents
 
